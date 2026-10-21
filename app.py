@@ -133,6 +133,15 @@ class Room:
         if p and p.get("ws") and not p["ws"].closed:
             await p["ws"].send_str(json.dumps(message))
 
+def get_join_url(request, code):
+    host_header = request.headers.get("X-Forwarded-Host") or request.headers.get("Host") or ""
+    proto = request.headers.get("X-Forwarded-Proto") or ("https" if request.secure else "http")
+    if host_header and not host_header.startswith("localhost") and not host_header.startswith("127.0.0.1"):
+        return f"{proto}://{host_header}/?room={code}"
+    lan_ip = get_lan_ip()
+    port = request.app.get("port", 8000)
+    return f"http://{lan_ip}:{port}/?room={code}"
+
 rooms = {}
 
 async def ws_handler(request):
@@ -170,7 +179,7 @@ async def ws_handler(request):
 
                 lan_ip = get_lan_ip()
                 port = request.app.get("port", 8000)
-                join_url = f"http://{lan_ip}:{port}/?room={code}"
+                join_url = get_join_url(request, code)
 
                 await ws.send_str(json.dumps({
                     "event": "room_created",
@@ -200,7 +209,7 @@ async def ws_handler(request):
                     is_host = True
                     lan_ip = get_lan_ip()
                     port = request.app.get("port", 8000)
-                    join_url = f"http://{lan_ip}:{port}/?room={code}"
+                    join_url = get_join_url(request, code)
                     await ws.send_str(json.dumps({
                         "event": "room_joined_as_host",
                         "room": code,

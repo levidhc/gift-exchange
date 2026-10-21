@@ -328,10 +328,17 @@ function startOnlineGameAsHost() {
 
 function renderHostLobby(roomCode, joinUrl) {
     AppState.roomCode = roomCode;
-    AppState.joinUrl = joinUrl;
+
+    // Use current browser origin if on a public domain (e.g. onrender.com)
+    let actualJoinUrl = `${window.location.origin}/?room=${roomCode}`;
+    if ((window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && joinUrl) {
+        actualJoinUrl = joinUrl;
+    }
+
+    AppState.joinUrl = actualJoinUrl;
 
     $('host-room-code').innerText = roomCode;
-    $('host-join-url-input').value = joinUrl;
+    $('host-join-url-input').value = actualJoinUrl;
     $('badge-room-code').innerText = `房間：${roomCode}`;
     $('header-room-badge').style.display = 'inline-flex';
 
@@ -339,7 +346,7 @@ function renderHostLobby(roomCode, joinUrl) {
     const qrContainer = $('host-qrcode-box');
     qrContainer.innerHTML = '';
     new QRCode(qrContainer, {
-        text: joinUrl,
+        text: actualJoinUrl,
         width: 170,
         height: 170,
         colorDark: '#0f172a',
@@ -349,8 +356,8 @@ function renderHostLobby(roomCode, joinUrl) {
 
     // Copy link button
     $('btn-copy-join-link').onclick = () => {
-        navigator.clipboard.writeText(joinUrl).then(() => {
-            showToast('已複製手機加入連結！📋');
+        navigator.clipboard.writeText(actualJoinUrl).then(() => {
+            showToast('已複製加入連結！📋');
         });
     };
 
