@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>禮物心機猜猜樂 🎁 Gift Guess & Swap - 交換禮物線上遊戲</title>
+    <meta name="description" content="N個人交換禮物！每人上傳或手繪想要禮物的線索圖（不能直接畫出禮物），收到的人要從三張圖中猜出哪張是你抽到的人畫的！支援多人手機連線與單機輪流模式。">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Outfit:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    
+    <!-- Stylesheet -->
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <!-- Ambient Background Glows -->
+    <div class="ambient-glow">
+        <div class="ambient-circle ambient-circle-1"></div>
+        <div class="ambient-circle ambient-circle-2"></div>
+    </div>
+
+    <!-- Main Container -->
+    <div class="app-container">
+        <!-- Navigation Header -->
+        <header class="app-header">
+            <div class="logo-group" onclick="location.href='/'">
+                <div class="logo-icon">🎁</div>
+                <div class="logo-text">
+                    <h1>禮物心機猜猜樂</h1>
+                    <p>不准畫出禮物！看誰能猜中你的心願</p>
+                </div>
+            </div>
+
+            <div class="header-actions">
+                <div id="header-room-badge" class="badge-room" style="display: none;">
+                    <span id="badge-room-code">房間：----</span>
+                </div>
+                <button id="btn-sound-toggle" class="btn-icon" title="切換音效" type="button">🔊</button>
+                <button id="btn-rules" class="btn-icon" title="遊戲規則說明" type="button">📖</button>
+            </div>
+        </header>
+
+        <!-- Main Views -->
+        <main class="main-content">
+
+            <!-- ================= VIEW 1: HOME (MODE SELECT) ================= -->
+            <section id="view-home" class="view-section active">
+                <div class="home-hero">
+                    <span class="hero-tag">🎉 聚會交換禮物必備神器</span>
+                    <h2>神偷聖誕節：<span>誰畫了這份禮物？</span></h2>
+                    <p>
+                        每個人畫出自己想要禮物的「隱藏線索」或上傳圖片（嚴禁直接畫出禮物！）。<br>
+                        配對抽籤後，你必須從 <strong>3 張神秘畫作</strong> 中，猜出哪一張才是你抽到的人畫的！
+                    </p>
+                </div>
+
+                <!-- Resume Host Room Banner (shown if host previously created a room) -->
+                <div id="banner-resume-host" style="display:none; background:linear-gradient(90deg, rgba(251,191,36,0.2), rgba(244,63,94,0.2)); border:1px solid rgba(251,191,36,0.5); border-radius:var(--radius-md); padding:12px 20px; margin-bottom:24px; align-items:center; justify-content:space-between; gap:12px; box-shadow:0 4px 20px rgba(0,0,0,0.3);">
+                    <div>
+                        <span style="font-size:1.2rem;">👑</span>
+                        <strong>偵測到你主持中的房間：<span id="resume-host-code" style="color:var(--festive-gold); font-size:1.15rem; letter-spacing:1px;">----</span></strong>
+                        <span style="font-size:0.85rem; color:var(--text-muted); margin-left:8px;">(關閉或重新整理後可隨時返回)</span>
+                    </div>
+                    <button id="btn-resume-host-action" class="btn btn-gold" type="button" style="padding:6px 18px; font-size:0.9rem;">
+                        立即返回主持 ➔
+                    </button>
+                </div>
+
+                <div class="mode-grid">
+                    <!-- Mode 1: Host Room -->
+                    <div class="mode-card" id="card-mode-host">
+                        <span class="mode-card-badge">最受歡迎</span>
+                        <div class="mode-icon">👑</div>
+                        <h3>我是主持人</h3>
+                        <p>在大螢幕或主機產生專屬房間代碼與 QR Code，讓大家用手機掃描即刻加入！</p>
+                        <div style="display:flex; flex-direction:column; gap:8px; width:100%;">
+                            <button id="btn-mode-create" class="btn btn-primary btn-block btn-mode" type="button">建立新房間 ➔</button>
+                            <button id="btn-mode-reconnect-host" class="btn btn-secondary btn-block" type="button" style="font-size:0.85rem; padding:8px 12px;">
+                                已有房間代碼？輸入重返 ➔
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Mode 2: Join Room -->
+                    <div class="mode-card" id="btn-mode-join">
+                        <div class="mode-icon">📱</div>
+                        <h3>加入朋友的房間</h3>
+                        <p>輸入主持人給你的 4 碼房間代號與暱稱，就能用自己的手機加入作畫與猜題！</p>
+                        <button class="btn btn-gold btn-block btn-mode" type="button">輸入代碼加入 ➔</button>
+                    </div>
+
+                    <!-- Mode 3: Pass & Play -->
+                    <div class="mode-card" id="btn-mode-pass">
+                        <div class="mode-icon">🔄</div>
+                        <h3>單機輪流玩（免連線）</h3>
+                        <p>圍坐客廳只有一台 iPad 或手機？沒問題！大家輪流拿著同一台裝置作畫與猜題！</p>
+                        <button class="btn btn-secondary btn-block btn-mode" type="button">開啟單機模式 ➔</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ================= VIEW 2: HOST LOBBY ================= -->
+            <section id="view-host-lobby" class="view-section">
+                <div class="glass-panel">
+                    <div class="host-lobby-grid">
+                        <!-- Left: QR Code & Join Link -->
+                        <div class="qr-card">
+                            <span class="hero-tag">掃描加入房間</span>
+                            <div class="room-code-tag" id="host-room-code">----</div>
+                            <div class="qr-wrapper" id="host-qrcode-box"></div>
+                            <div class="join-link-box">
+                                <input type="text" id="host-join-url-input" class="input-field" readonly />
+                                <button id="btn-copy-join-link" class="btn btn-secondary" type="button">複製</button>
+                            </div>
+                            <p style="font-size:0.8rem; color:var(--text-muted); margin-top:10px;">
+                                💡 手機連線至同一 Wi-Fi 掃描即可秒速加入！
+                            </p>
+                        </div>
+
+                        <!-- Right: Player Roster & Actions -->
+                        <div>
+                            <div class="roster-header">
+                                <h3 style="font-size:1.3rem;">👥 已加入的玩家</h3>
+                                <span id="host-player-count" style="font-size:0.9rem; color:var(--festive-gold); font-weight:700;">
+                                    目前 0 人加入
+                                </span>
+                            </div>
+
+                            <div class="player-chips-grid" id="host-player-chips">
+                                <!-- Dynamic player chips -->
+                            </div>
+
+                            <div style="display:flex; flex-direction:column; gap:12px; margin-top:20px;">
+                                <button id="btn-host-start-art" class="btn btn-primary btn-lg btn-block" type="button">
+                                    🎨 所有人到齊，開始創作線索圖！
+                                </button>
+                                
+                                <div id="host-art-progress-panel" style="display:none; margin-top:8px;">
+                                    <button id="btn-host-start-matching" class="btn btn-gold btn-lg btn-block" type="button" disabled>
+                                        等待玩家提交畫作...
+                                    </button>
+                                </div>
+
+                                <div id="host-guessing-progress-panel" style="display:none; margin-top:8px;">
+                                    <div style="background:rgba(251,191,36,0.1); border:1px solid rgba(251,191,36,0.3); border-radius:var(--radius-md); padding:14px; margin-bottom:12px; text-align:center;">
+                                        <div style="font-size:1.05rem; font-weight:700; color:var(--festive-gold);" id="host-guessing-status-text">
+                                            🎯 抽籤配對完成！玩家正在猜題中...
+                                        </div>
+                                        <div style="font-size:0.85rem; color:var(--text-muted); margin-top:4px;" id="host-guessing-count-text">
+                                            0 人已完成猜題
+                                        </div>
+                                    </div>
+                                    <button id="btn-host-show-results-main" class="btn btn-gold btn-lg btn-block" type="button">
+                                        🏆 開啟全場大揭曉！
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ================= VIEW 3: PLAYER LOBBY (MOBILE) ================= -->
+            <section id="view-player-lobby" class="view-section">
+                <div class="glass-panel" style="text-align: center; padding: 48px 24px;">
+                    <div style="font-size: 4.5rem; margin-bottom: 16px;" id="player-lobby-avatar">🎁</div>
+                    <h2 style="font-size: 1.8rem; margin-bottom: 8px;">哈囉，<span id="player-lobby-name">玩家</span>！</h2>
+                    <p style="color: var(--text-muted); font-size: 1.05rem; margin-bottom: 30px;">
+                        你已成功進入交換禮物房間！<br>請抬頭看主機螢幕，等待主持人點擊「開始遊戲」...
+                    </p>
+                    <div style="display:inline-block; animation: gentleWiggle 2s infinite ease-in-out; font-size: 2.5rem;">
+                        🎄
+                    </div>
+                </div>
+            </section>
+
+            <!-- ================= VIEW 4: ART & CLUE STUDIO ================= -->
+            <section id="view-art-studio" class="view-section">
+                <div class="glass-panel">
+                    <!-- Rule Warning & Hints Accordion -->
+                    <div class="rule-banner">
+                        <div class="rule-icon">⚠️</div>
+                        <div style="flex:1;">
+                            <h4>核心規則：絕對不能直接畫出禮物！</h4>
+                            <p>
+                                如果你想要「咖啡機」，不能直接畫一台機器！<br>
+                                請發揮創意，用<strong>聯想、特徵、謎語、聲音、使用情境、表情包或諧音</strong>來表達！
+                            </p>
+                            <div class="hints-accordion">
+                                <button type="button" id="btn-toggle-hints" class="hints-toggle">
+                                    💡 點此查看創意範例靈感庫
+                                </button>
+                                <div id="hints-content" class="hints-content">
+                                    ☕ <strong>咖啡機</strong> ➡️ 畫一隻睜大眼的貓頭鷹 + 一個冒著熱氣的馬克杯<br>
+                                    🎧 <strong>降噪耳機</strong> ➡️ 畫一隻把耳朵用棉花塞住的兔子，旁邊是吵鬧的老闆<br>
+                                    🧣 <strong>保暖圍巾</strong> ➡️ 畫一隻脖子凍得發紫的長頸鹿瑟瑟發抖<br>
+                                    🎮 <strong>Switch 遊戲機</strong> ➡️ 畫一紅一藍的雙節棍 + 踩蘑菇的人<br>
+                                    🕯️ <strong>香氛蠟燭</strong> ➡️ 畫一團溫暖小火苗，周圍飄散著薰衣草花瓣
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <h3 id="art-studio-title" style="font-size:1.35rem; margin-bottom:16px;">
+                        🎨 創作你的神秘禮物線索圖
+                    </h3>
+
+                    <div class="art-studio-layout">
+                        <!-- Left: Canvas Studio -->
+                        <div class="canvas-wrapper">
+                            <div class="canvas-card" id="canvas-card-wrapper">
+                                <canvas id="art-canvas"></canvas>
+                            </div>
+
+                            <!-- Canvas Controls -->
+                            <div class="canvas-toolbar">
+                                <!-- Colors -->
+                                <div class="swatches-row">
+                                    <div id="color-swatches" class="swatches-row" style="display:inline-flex;"></div>
+                                    <input type="color" id="custom-color-picker" class="custom-color-input" title="自訂顏色" value="#10b981">
+                                </div>
+
+                                <!-- Tools & Sizes -->
+                                <div class="tools-row">
+                                    <div class="brush-sizes" id="brush-sizes-wrap"></div>
+
+                                    <div class="tool-btn-group">
+                                        <button id="btn-tool-neon" class="tool-btn" type="button" title="發光霓虹筆刷">✨ 霓虹</button>
+                                        <button id="btn-tool-eraser" class="tool-btn" type="button" title="橡皮擦">🧹 擦子</button>
+                                        <button id="btn-tool-undo" class="tool-btn" type="button" title="復原上一筆">↩ 復原</button>
+                                        <button id="btn-tool-clear" class="tool-btn" type="button" title="清空重畫">🗑 清除</button>
+                                    </div>
+                                </div>
+
+                                <!-- Alternative: Upload Image -->
+                                <div class="upload-divider">
+                                    <span>或直接上傳圖片</span>
+                                </div>
+
+                                <div class="upload-dropzone" id="dropzone-box">
+                                    <input type="file" id="image-file-input" accept="image/*" style="display:none;" />
+                                    <div style="font-size: 1.4rem; margin-bottom: 4px;">📁</div>
+                                    <div style="font-size: 0.85rem; color: var(--text-main); font-weight: 600;">
+                                        點擊此處或拖曳圖片上傳
+                                    </div>
+                                    <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">
+                                        支援手機拍照、手機相簿或網路謎因圖片
+                                    </div>
+                                    <button id="btn-upload-image" type="button" class="btn btn-secondary" style="margin-top:8px; padding:6px 14px; font-size:0.8rem;">
+                                        從手機/電腦選取圖片
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right: Clue Metadata Form -->
+                        <div class="clue-meta-panel">
+                            <div class="wish-highlight-box">
+                                <strong>🎁 保密承諾：</strong><br>
+                                真正的禮物名稱在猜題階段不會被其他人看見，只會在最後大揭曉或是對方猜出你的線索後才公佈！
+                            </div>
+
+                            <div class="input-group">
+                                <label class="input-label" for="input-art-wish">
+                                    1. 你真正想要收到的禮物是？ <span style="color:var(--primary-red);">*</span>
+                                </label>
+                                <input type="text" id="input-art-wish" class="input-field" placeholder="例：無線藍芽耳機、手沖咖啡杯..." maxlength="40" required />
+                            </div>
+
+                            <div class="input-group">
+                                <label class="input-label" for="input-art-hint">
+                                    2. 神秘線索 / 創作補充說明 (選填)
+                                </label>
+                                <textarea id="input-art-hint" class="input-field" rows="3" placeholder="例：戴上去全世界就安靜了；冬天溫暖必備神器..." maxlength="80"></textarea>
+                            </div>
+
+                            <button id="btn-submit-art-clue" class="btn btn-primary btn-lg btn-block" style="margin-top:auto;" type="button">
+                                🚀 確認提交線索圖！
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ================= VIEW 5: ART WAITING ================= -->
+            <section id="view-art-waiting" class="view-section">
+                <div class="glass-panel" style="text-align: center; padding: 48px 24px;">
+                    <div style="font-size: 4rem; margin-bottom: 16px;">🎨</div>
+                    <h2 style="font-size: 1.8rem; margin-bottom: 12px; color: var(--festive-emerald);">線索圖已成功提交！</h2>
+                    <p style="color: var(--text-muted); font-size: 1rem; max-width: 480px; margin: 0 auto 24px;">
+                        你的神秘畫作與願望已經鎖入保險箱！<br>
+                        等大家都提交完畢，主持人將會啟動「禮物配對與三選一猜謎」！
+                    </p>
+                    <div style="display:inline-block; animation: gentleWiggle 2s infinite ease-in-out; font-size: 2.5rem;">
+                        ⏳
+                    </div>
+                </div>
+            </section>
+
+            <!-- ================= VIEW 6: 3-IMAGE GUESSING PHASE ================= -->
+            <section id="view-guessing" class="view-section">
+                <div class="guessing-container">
+                    <div class="target-hero">
+                        <div class="subtitle">🎯 你的神祕送禮對象是：</div>
+                        <div class="target-badge">
+                            <span id="target-avatar-display">🎁</span>
+                            <span id="target-name-display">小明</span>
+                        </div>
+                        <p id="target-name-desc">請從以下 3 張神秘線索圖中，找出哪一張是【小明】畫的！</p>
+                    </div>
+
+                    <!-- 3 Cards -->
+                    <div class="three-cards-grid" id="three-cards-container">
+                        <!-- Card 0, 1, 2 injected by JS -->
+                    </div>
+
+                    <!-- Confirm button -->
+                    <div style="text-align: center; margin-bottom: 24px;">
+                        <button id="btn-confirm-guess" class="btn btn-gold btn-lg" type="button" disabled style="min-width: 280px;">
+                            請先選定一張圖片
+                        </button>
+                    </div>
+
+                    <!-- Instant Result Pop-up Banner -->
+                    <div id="guess-result-banner" class="result-banner" style="display:none;"></div>
+
+                    <!-- Host control for ending guessing -->
+                    <div style="text-align: center; margin-top: 24px;">
+                        <button id="btn-host-trigger-results" class="btn btn-primary btn-lg" style="display:none;" type="button">
+                            🏆 大家都猜完了，進入全場大揭曉！
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ================= VIEW 7: FINAL RESULTS & SHOWCASE ================= -->
+            <section id="view-results" class="view-section">
+                <div class="glass-panel">
+                    <div class="showcase-header">
+                        <span class="hero-tag">🎉 交換禮物全場大揭曉</span>
+                        <h2>誰是你的聖誕秘密老人？</h2>
+                        <p style="color: var(--text-muted); font-size: 1rem;">
+                            以下揭曉今晚的禮物交換完美閉環，以及所有玩家的靈魂畫作與真正的禮物心願！
+                        </p>
+                    </div>
+
+                    <!-- Exchange Ring -->
+                    <div style="margin-bottom: 30px;">
+                        <h3 style="font-size: 1.25rem; margin-bottom: 14px; text-align: center;">
+                            🎁 交換禮物贈送鏈 (Who Gives to Whom)
+                        </h3>
+                        <div class="ring-chain" id="exchange-ring-chain">
+                            <!-- Dynamic exchange chain chips -->
+                        </div>
+                    </div>
+
+                    <!-- Detectives Honor Roll -->
+                    <div style="text-align: center; margin-bottom: 36px; background: rgba(0,0,0,0.25); border-radius: var(--radius-md); padding: 16px;">
+                        <h4 style="font-size: 1.1rem; color: var(--festive-gold); margin-bottom: 8px;">
+                            🕵️‍♂️ 心靈相通神探榜（成功猜中目標畫作的玩家）
+                        </h4>
+                        <div id="correct-detectives-list"></div>
+                    </div>
+
+                    <!-- Gallery Grid -->
+                    <div>
+                        <h3 style="font-size: 1.25rem; margin-bottom: 16px;">
+                            🖼️ 禮物線索藝術館（點擊圖片可放大）
+                        </h3>
+                        <div class="gallery-grid" id="gallery-cards-grid">
+                            <!-- Injected gallery cards -->
+                        </div>
+                    </div>
+
+                    <div style="text-align: center; margin-top: 36px;">
+                        <button id="btn-play-again" class="btn btn-gold btn-lg" type="button">
+                            🔄 再玩一局 / 重新開局
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ================= VIEW 8: PASS & PLAY SETUP ================= -->
+            <section id="view-pass-setup" class="view-section">
+                <div class="glass-panel" style="max-width: 650px; margin: 0 auto;">
+                    <div style="text-align: center; margin-bottom: 24px;">
+                        <div style="font-size: 3rem;">📱</div>
+                        <h2 style="font-size: 1.8rem; margin-bottom: 8px;">單機輪流同樂模式</h2>
+                        <p style="color: var(--text-muted);">
+                            不用每個人連 Wi-Fi！大家圍坐在一起，輪流拿著這台裝置作畫與猜題！
+                        </p>
+                    </div>
+
+                    <div class="input-group">
+                        <label class="input-label" for="input-local-player-name">輸入參加者暱稱 (依序新增)：</label>
+                        <div style="display:flex; gap:10px;">
+                            <input type="text" id="input-local-player-name" class="input-field" placeholder="例如：小明、小華、阿強..." maxlength="20" />
+                            <button id="btn-add-local-player" class="btn btn-primary" type="button">＋ 加入</button>
+                        </div>
+                    </div>
+
+                    <h4 style="font-size: 1rem; margin-bottom: 10px; color: var(--text-muted);">已加入名單：</h4>
+                    <div id="local-players-roster" class="player-chips-grid" style="min-height: 120px;"></div>
+
+                    <button id="btn-start-local-drawing" class="btn btn-gold btn-lg btn-block" style="margin-top: 20px;" type="button" disabled>
+                        開始輪流創作線索圖 ➔
+                    </button>
+                </div>
+            </section>
+
+            <!-- ================= VIEW 9: PASS & PLAY TURN SHIELD ================= -->
+            <section id="view-turn-shield" class="view-section">
+                <div class="glass-panel turn-shield" style="max-width: 550px; margin: 40px auto;">
+                    <div class="turn-shield-avatar" id="shield-player-avatar">🎅</div>
+                    <h3 id="shield-title">請將螢幕交給【小明】</h3>
+                    <p id="shield-desc">其他人請轉過身或閉上眼睛，不要偷看小明的願望與畫作喔！🤫</p>
+                    <button id="btn-turn-shield-ready" class="btn btn-primary btn-lg btn-block" type="button">
+                        我已經拿好螢幕了，開始操作！➔
+                    </button>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- ================= MODAL: JOIN ROOM ================= -->
+    <div id="modal-join" class="modal-overlay">
+        <div class="modal-content" style="max-width: 440px;">
+            <div class="modal-header">
+                <h3 id="modal-join-title" style="font-size: 1.25rem;">📱 加入遊戲房間</h3>
+                <button id="btn-cancel-join" class="btn-icon" style="width:32px; height:32px; font-size:1rem;">✕</button>
+            </div>
+            <div class="modal-body" style="align-items: stretch;">
+                <!-- Role Toggle Tabs -->
+                <div style="display:flex; background:rgba(255,255,255,0.06); border-radius:var(--radius-md); padding:4px; margin-bottom:18px; gap:4px;">
+                    <button type="button" id="tab-join-player" class="btn" style="flex:1; border:none; padding:8px 12px; font-size:0.88rem; background:var(--primary-red); color:#fff; font-weight:700;">
+                        🙋‍♂️ 我是玩家加入
+                    </button>
+                    <button type="button" id="tab-join-host" class="btn" style="flex:1; border:none; padding:8px 12px; font-size:0.88rem; background:transparent; color:var(--text-muted);">
+                        👑 我是主持人重返
+                    </button>
+                </div>
+
+                <div class="input-group">
+                    <label class="input-label" for="input-join-room">4 碼房間代號：</label>
+                    <input type="text" id="input-join-room" class="input-field" placeholder="例如：EV94" maxlength="6" style="text-transform: uppercase; font-weight:700; font-size:1.25rem; letter-spacing:2px;" />
+                </div>
+
+                <div id="join-player-specific-fields">
+                    <div class="input-group">
+                        <label class="input-label" for="input-join-name">你的大名／暱稱：</label>
+                        <input type="text" id="input-join-name" class="input-field" placeholder="大家怎麼稱呼你？" maxlength="20" />
+                    </div>
+
+                    <div class="input-group">
+                        <label class="input-label">選擇你的代表頭像：</label>
+                        <div id="avatar-selector-grid" class="avatar-grid"></div>
+                    </div>
+                </div>
+
+                <div id="join-host-hint" style="display:none; background:rgba(251,191,36,0.12); border:1px solid rgba(251,191,36,0.3); border-radius:var(--radius-sm); padding:10px 14px; margin-bottom:16px; font-size:0.85rem; color:#fef08a;">
+                    👑 <strong>主持人說明：</strong> 輸入您先前建立的 4 碼房間代碼（例如：EV94），即可重返大廳控制台！
+                </div>
+
+                <button id="btn-submit-join" class="btn btn-primary btn-lg btn-block" type="button">
+                    進入房間 ➔
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= MODAL: GAME RULES ================= -->
+    <div id="modal-rules" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 style="font-size: 1.25rem;">📖 遊戲玩法與規則指南</h3>
+                <button id="btn-close-rules" class="btn-icon" style="width:32px; height:32px; font-size:1rem;">✕</button>
+            </div>
+            <div class="modal-body" style="align-items: stretch;">
+                <ol class="rules-list">
+                    <li>
+                        <strong>1. 創作禮物線索圖：</strong><br>
+                        每位參加者在手機或畫布上，創作一張代表自己「想要禮物」的線索圖。<br>
+                        <span style="color:#fda4af;">⚠️ 核心禁忌：絕對不能直接畫出禮物本體！</span> 必須透過諧音、使用情境、謎題、特徵或相關聯想來畫。
+                    </li>
+                    <li>
+                        <strong>2. 秘密配對 (Secret Santa)：</strong><br>
+                        系統會自動執行完美密排配對（保證不會抽到自己），每個人都會抽到一位送禮對象。
+                    </li>
+                    <li>
+                        <strong>3. 三選一猜謎：</strong><br>
+                        螢幕會顯示「你抽到的人的名字」，以及 <strong>3 張神秘畫作</strong>！<br>
+                        其中只有 1 張是他真正畫的，另外 2 張是混淆障眼法。你必須猜出哪一張是他畫的！
+                    </li>
+                    <li>
+                        <strong>4. 揭曉與狂歡大獎：</strong><br>
+                        猜完後立即揭曉心願！最後大家一起看全場配對環與靈魂畫作展覽，看看誰是心靈相通的「神探伯樂」！
+                    </li>
+                </ol>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= MODAL: ZOOM IMAGE ================= -->
+    <div id="modal-zoom" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-zoom-caption" style="font-size: 1.1rem; color: var(--festive-gold);">放大檢視</h3>
+                <button id="btn-close-zoom" class="btn-icon" style="width:32px; height:32px; font-size:1rem;">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-img-wrap">
+                    <img id="modal-zoom-img" src="" alt="放大圖片" />
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Scripts -->
+    <script src="/static/js/confetti.min.js"></script>
+    <script src="/static/js/qrcode.min.js"></script>
+    <script src="/static/js/sound.js"></script>
+    <script src="/static/js/canvas.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
