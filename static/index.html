@@ -434,13 +434,13 @@
                             </div>
                             <div class="step-btn-row">
                                 <button id="btn-step-action-1" class="btn btn-step active" type="button">
-                                    1️⃣ 畫面 1：展示他收到的 3 張圖
+                                    1️⃣ 畫面 1：揭曉他抽到的送禮對象！
                                 </button>
                                 <button id="btn-step-action-2" class="btn btn-step" type="button">
-                                    2️⃣ 畫面 2：揭曉他抽到的送禮對象！
+                                    2️⃣ 畫面 2：展示他收到的 3 張圖
                                 </button>
                                 <button id="btn-step-action-3" class="btn btn-step btn-gold" type="button">
-                                    3️⃣ 畫面 3：震撼翻牌！揭曉每張圖作者與願望！
+                                    3️⃣ 畫面 3：揭曉他抽到的送禮對象 想要什麼禮物
                                 </button>
                             </div>
                         </div>
@@ -459,7 +459,7 @@
 
                         <!-- Active Spotlight Stage -->
                         <div id="stage-active-state" class="stage-card" style="display:none;">
-                            <!-- Stage Top Banner -->
+                            <!-- Stage Top Banner (Guesser & Receiver Spotlight) -->
                             <div class="spotlight-header">
                                 <div class="guesser-spotlight">
                                     <span class="spotlight-avatar" id="sync-guesser-avatar">🎅</span>
@@ -469,7 +469,7 @@
                                     </div>
                                 </div>
 
-                                <!-- Step 2 Target Spotlight -->
+                                <!-- Step 1 & beyond Target Spotlight -->
                                 <div class="target-spotlight" id="sync-target-spotlight" style="display:none;">
                                     <div class="gift-direction-arrow">🎁 抽到的送禮對象是 ➔</div>
                                     <div class="target-box">
@@ -482,21 +482,41 @@
                                 </div>
                             </div>
 
-                            <!-- Step 3 Target Wish & Clue Box -->
+                            <!-- Step 1 Suspense Teaser (Shown right after recipient is revealed) -->
+                            <div id="sync-step1-teaser" class="step-teaser-box" style="display:none;">
+                                <div style="font-size: 2.2rem; margin-bottom: 6px;">🤔</div>
+                                <h4>送禮對象曝光！小華抽到的正是【<span id="step1-teaser-receiver-name">小美</span>】！</h4>
+                                <p style="color: var(--text-muted); font-size: 0.95rem; margin-top: 4px;">
+                                    究竟【<span id="step1-teaser-receiver-name-2">小美</span>】畫了哪一張線索圖？小華有沒有看穿呢？<br>
+                                    請主持人點擊 <strong>「2️⃣ 畫面 2：展示他收到的 3 張圖」</strong>！
+                                </p>
+                            </div>
+
+                            <!-- Step 2 Cards Verdict Banner (Revealed in Step 2) -->
+                            <div id="sync-cards-verdict-box" class="sync-cards-verdict" style="display:none;">
+                                <div id="sync-cards-verdict-text" class="result-verdict"></div>
+                                <p id="step2-next-prompt" style="font-size:0.85rem; color:#cbd5e1; margin-top:4px;">
+                                    那麼【<span id="step2-verdict-receiver-name">小美</span>】真正想要收到的禮物究竟是什麼？請主持人點擊 <strong>「3️⃣ 畫面 3：揭曉他抽到的送禮對象 想要什麼禮物」</strong>！
+                                </p>
+                            </div>
+
+                            <!-- 3 Synchronized Cards Display (Shown in Step 2 & Step 3) -->
+                            <div class="sync-cards-grid" id="sync-cards-grid" style="display:none;">
+                                <!-- Cards injected here with 3D Flip effects -->
+                            </div>
+
+                            <!-- Step 3 Target Wish Highlight (Revealed in Step 3) -->
                             <div id="sync-wish-banner" class="sync-wish-box" style="display:none;">
                                 <div class="wish-title">
-                                    <span>🎁 【<span id="sync-wish-target-name">小美</span>】真正的禮物願望：</span>
-                                    <strong id="sync-wish-text" style="color:var(--festive-gold); font-size:1.2rem;">無線耳機</strong>
+                                    <span>🎁 【<span id="sync-wish-target-name">小美</span>】真正的禮物願望大公開：</span>
+                                    <strong id="sync-wish-text" style="color:var(--festive-gold); font-size:1.35rem; display:block; margin:6px 0;">無線降噪耳機</strong>
                                 </div>
                                 <div id="sync-hint-row" class="wish-hint" style="display:none;">
                                     💭 創作線索說明：「<span id="sync-hint-text"></span>」
                                 </div>
-                                <div id="sync-result-verdict" class="result-verdict"></div>
-                            </div>
-
-                            <!-- 3 Synchronized Cards Display -->
-                            <div class="sync-cards-grid" id="sync-cards-grid">
-                                <!-- Cards injected here with 3D Flip effects -->
+                                <div class="wish-call-to-action">
+                                    ✨ 謎底全數解開！請【<span id="sync-wish-guesser-name">小華</span>】在會議當天將這份心願禮物親手交給【<span id="sync-wish-target-name-2">小美</span>】！🎁
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -582,6 +602,7 @@
             <section id="view-turn-shield" class="view-section">
                 <div class="glass-panel turn-shield" style="max-width: 550px; margin: 40px auto;">
                     <div class="turn-shield-avatar" id="shield-player-avatar">🎅</div>
+                    <div id="shield-player-name" style="font-weight:700; font-size:1.4rem; color:var(--festive-gold); margin-bottom:8px;">小明</div>
                     <h3 id="shield-title">請將螢幕交給【小明】</h3>
                     <p id="shield-desc">其他人請轉過身或閉上眼睛，不要偷看小明的願望與畫作喔！🤫</p>
                     <button id="btn-turn-shield-ready" class="btn btn-primary btn-lg btn-block" type="button">

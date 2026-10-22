@@ -1862,6 +1862,41 @@ main.main-content {
     color: #fb7185;
 }
 
+.step-teaser-box {
+    background: rgba(15, 23, 42, 0.7);
+    border: 1px dashed rgba(251, 191, 36, 0.4);
+    border-radius: var(--radius-md);
+    padding: 30px 20px;
+    text-align: center;
+    margin-bottom: 24px;
+    animation: fadeIn 0.4s ease-out;
+}
+
+.step-teaser-box h4 {
+    font-size: 1.25rem;
+    color: var(--festive-gold);
+    margin-bottom: 8px;
+}
+
+.sync-cards-verdict {
+    background: rgba(15, 23, 42, 0.75);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: var(--radius-md);
+    padding: 14px 20px;
+    text-align: center;
+    margin-bottom: 20px;
+    animation: fadeIn 0.4s ease-out;
+}
+
+.wish-call-to-action {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #fef08a;
+}
+
 /* 3-Cards Sync Grid */
 .sync-cards-grid {
     display: grid;

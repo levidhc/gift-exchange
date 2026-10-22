@@ -751,63 +751,131 @@ function handleSyncRevealStep(data) {
     AppState.activeRevealUserId = data.userId;
     AppState.activeRevealStep = step;
 
-    // Spotlight guesser header
+    // 1. Spotlight guesser header
     $('sync-guesser-avatar').innerText = data.userAvatar || '🎅';
     $('sync-guesser-name').innerText = data.userName || '玩家';
 
+    // 2. Spotlight recipient header
+    const targetSpotlight = $('sync-target-spotlight');
+    if (targetSpotlight) {
+        targetSpotlight.style.display = 'flex';
+        $('sync-target-avatar').innerText = data.receiverAvatar || '🎯';
+        $('sync-target-name').innerText = data.receiverName || '幸運兒';
+    }
+
     if (AppState.role === 'host') {
         $('host-step-controls').style.display = 'flex';
-        $('current-spotlight-user-label').innerText = `正在揭曉：【${data.userName}】（第 ${step} 步）`;
+        const stepLabels = {
+            1: '畫面 1：已揭曉抽到的送禮對象！',
+            2: '畫面 2：已展示收到的 3 張圖',
+            3: '畫面 3：已揭曉送禮對象想要什麼禮物'
+        };
+        $('current-spotlight-user-label').innerText = `正在揭曉：【${data.userName}】（${stepLabels[step] || ''}）`;
         updateStepButtonsActive(step);
     }
 
-    // Step 1: 畫面 1 - user 收到的 3 張圖 (標示猜測哪張，作者依然保密)
+    const step1Teaser = $('sync-step1-teaser');
+    const cardsVerdictBox = $('sync-cards-verdict-box');
+    const cardsGrid = $('sync-cards-grid');
+    const wishBanner = $('sync-wish-banner');
+
+    // =========================================================================
+    // Step 1: 畫面 1 - 揭曉他抽到的送禮對象！
+    // =========================================================================
     if (step === 1) {
-        $('sync-target-spotlight').style.display = 'none';
-        $('sync-wish-banner').style.display = 'none';
-        renderSyncCardsGrid(data.options, data.pickedIndex, false);
-        if (window.sound) window.sound.playShuffle();
-    }
-    // Step 2: 畫面 2 - 揭曉 user 抽到的收禮物的人
-    else if (step === 2) {
-        $('sync-target-spotlight').style.display = 'flex';
-        $('sync-target-avatar').innerText = data.receiverAvatar || '🎯';
-        $('sync-target-name').innerText = data.receiverName || '幸運兒';
-        $('sync-wish-banner').style.display = 'none';
-        renderSyncCardsGrid(data.options, data.pickedIndex, false);
+        // Show step 1 teaser
+        if (step1Teaser) {
+            step1Teaser.style.display = 'block';
+            $('step1-teaser-receiver-name').innerText = data.receiverName;
+            $('step1-teaser-receiver-name-2').innerText = data.receiverName;
+        }
+
+        // Hide cards, verdict and wish banner for now
+        if (cardsVerdictBox) cardsVerdictBox.style.display = 'none';
+        if (cardsGrid) cardsGrid.style.display = 'none';
+        if (wishBanner) wishBanner.style.display = 'none';
+
         if (window.sound) window.sound.playChime();
     }
-    // Step 3: 畫面 3 - 震撼翻牌！揭曉每張圖作者與願望！
+    // =========================================================================
+    // Step 2: 畫面 2 - 展示他收到的 3 張圖 (標示他選了哪張、每張圖是誰畫的、猜對猜錯)
+    // =========================================================================
+    else if (step === 2) {
+        if (step1Teaser) step1Teaser.style.display = 'none';
+        if (wishBanner) wishBanner.style.display = 'none';
+
+        // Show cards grid
+        if (cardsGrid) cardsGrid.style.display = 'grid';
+        renderSyncCardsGrid(data.options, data.pickedIndex, true);
+
+        // Show cards verdict banner
+        if (cardsVerdictBox) {
+            cardsVerdictBox.style.display = 'block';
+            $('step2-verdict-receiver-name').innerText = data.receiverName;
+            const nextPrompt = $('step2-next-prompt');
+            if (nextPrompt) nextPrompt.style.display = 'block';
+
+            const verdictText = $('sync-cards-verdict-text');
+            if (data.isCorrect) {
+                verdictText.className = 'result-verdict correct';
+                verdictText.innerHTML = `🎉 太神了！【${data.userName}】成功選中了【${data.receiverName}】畫的線索圖！心靈相通！`;
+                triggerConfetti();
+                if (window.sound) window.sound.playPartyCheer();
+            } else {
+                verdictText.className = 'result-verdict wrong';
+                verdictText.innerHTML = `💨 哎呀～【${data.userName}】猜錯了！【${data.receiverName}】真正的畫作是另外一張喔！`;
+                if (window.sound) window.sound.playWrong();
+            }
+        }
+    }
+    // =========================================================================
+    // Step 3: 畫面 3 - 揭曉他抽到的送禮對象 想要什麼禮物
+    // =========================================================================
     else if (step === 3) {
-        $('sync-target-spotlight').style.display = 'flex';
-        $('sync-target-avatar').innerText = data.receiverAvatar || '🎯';
-        $('sync-target-name').innerText = data.receiverName || '幸運兒';
+        if (step1Teaser) step1Teaser.style.display = 'none';
 
-        const wishBox = $('sync-wish-banner');
-        wishBox.style.display = 'block';
-        $('sync-wish-target-name').innerText = data.receiverName;
-        $('sync-wish-text').innerText = data.receiverWish || '神秘禮物心願';
+        // Keep cards verdict banner visible, hide prompt to click step 3
+        if (cardsVerdictBox) {
+            cardsVerdictBox.style.display = 'block';
+            const nextPrompt = $('step2-next-prompt');
+            if (nextPrompt) nextPrompt.style.display = 'none';
 
-        if (data.receiverHint) {
-            $('sync-hint-row').style.display = 'block';
-            $('sync-hint-text').innerText = data.receiverHint;
-        } else {
-            $('sync-hint-row').style.display = 'none';
+            const verdictText = $('sync-cards-verdict-text');
+            if (verdictText && (!verdictText.innerHTML || verdictText.innerHTML.trim() === '')) {
+                if (data.isCorrect) {
+                    verdictText.className = 'result-verdict correct';
+                    verdictText.innerHTML = `🎉 太神了！【${data.userName}】成功選中了【${data.receiverName}】畫的線索圖！心靈相通！`;
+                } else {
+                    verdictText.className = 'result-verdict wrong';
+                    verdictText.innerHTML = `💨 哎呀～【${data.userName}】猜錯了！【${data.receiverName}】真正的畫作是另外一張喔！`;
+                }
+            }
         }
 
-        const verdict = $('sync-result-verdict');
-        if (data.isCorrect) {
-            verdict.className = 'result-verdict correct';
-            verdict.innerHTML = `🎉 太神了！【${data.userName}】成功猜對【${data.receiverName}】的線索圖！心靈相通！`;
+        // Ensure cards grid remains visible
+        if (cardsGrid) cardsGrid.style.display = 'grid';
+        if (data.options) {
+            renderSyncCardsGrid(data.options, data.pickedIndex, true);
+        }
+
+        // Dramatically display wish banner
+        if (wishBanner) {
+            wishBanner.style.display = 'block';
+            $('sync-wish-target-name').innerText = data.receiverName;
+            $('sync-wish-target-name-2').innerText = data.receiverName;
+            $('sync-wish-guesser-name').innerText = data.userName;
+            $('sync-wish-text').innerText = data.receiverWish || '神秘驚喜禮物';
+
+            if (data.receiverHint) {
+                $('sync-hint-row').style.display = 'block';
+                $('sync-hint-text').innerText = data.receiverHint;
+            } else {
+                $('sync-hint-row').style.display = 'none';
+            }
+
             triggerConfetti();
             if (window.sound) window.sound.playPartyCheer();
-        } else {
-            verdict.className = 'result-verdict wrong';
-            verdict.innerHTML = `💨 哎呀～【${data.userName}】猜錯啦！原來這才是【${data.receiverName}】的真正畫作！`;
-            if (window.sound) window.sound.playWrong();
         }
-
-        renderSyncCardsGrid(data.options, data.pickedIndex, true);
 
         // Mark player in roster as revealed
         const pInRoster = (AppState.revealRoster || []).find(r => r.id === data.userId);
@@ -1507,18 +1575,24 @@ function renderLocalPlayersRoster() {
 function showLocalTurnShield(stage) {
     const g = AppState.localGame;
     const currentP = g.players[g.currentPlayerIndex];
+    if (!currentP) return;
 
-    $('shield-player-avatar').innerText = currentP.avatar;
-    $('shield-player-name').innerText = currentP.name;
+    const shieldAvatar = $('shield-player-avatar');
+    if (shieldAvatar) shieldAvatar.innerText = currentP.avatar;
+    const shieldName = $('shield-player-name');
+    if (shieldName) shieldName.innerText = currentP.name;
+
+    const shieldTitle = $('shield-title');
+    const shieldDesc = $('shield-desc');
 
     if (stage === 'drawing') {
         g.stage = 'draw_shield';
-        $('shield-title').innerText = `請將螢幕交給【${currentP.name}】`;
-        $('shield-desc').innerText = `其他人請轉過身或閉上眼睛，不要偷看 ${currentP.name} 的願望與畫作喔！🤫`;
+        if (shieldTitle) shieldTitle.innerText = `請將螢幕交給【${currentP.name}】`;
+        if (shieldDesc) shieldDesc.innerText = `其他人請轉過身或閉上眼睛，不要偷看 ${currentP.name} 的願望與畫作喔！🤫`;
     } else if (stage === 'guessing') {
         g.stage = 'guess_shield';
-        $('shield-title').innerText = `請將螢幕交給【${currentP.name}】`;
-        $('shield-desc').innerText = `其他人請閉眼！現在是 ${currentP.name} 的專屬猜題時間 🎯`;
+        if (shieldTitle) shieldTitle.innerText = `請將螢幕交給【${currentP.name}】`;
+        if (shieldDesc) shieldDesc.innerText = `其他人請閉眼！現在是 ${currentP.name} 的專屬猜題時間 🎯`;
     }
 
     showView('view-turn-shield');

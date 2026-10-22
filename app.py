@@ -546,7 +546,7 @@ async def ws_handler(request):
                 target = current_room.players[p["target_id"]]
                 three_choices = m_data["threeChoices"]
 
-                # Step 1: 畫面 1 - user 收到的 3 張圖 (標示 user 選了哪張，作者依然保密)
+                # Step 1: 畫面 1 - 揭曉他抽到的送禮對象！
                 if step == 1:
                     payload = {
                         "event": "sync_reveal_step",
@@ -554,20 +554,13 @@ async def ws_handler(request):
                         "userId": p["id"],
                         "userName": p["name"],
                         "userAvatar": p["avatar"],
-                        "pickedIndex": p["guess_index"],
-                        "options": [
-                            {
-                                "index": idx,
-                                "art": c["art"],
-                                "isPicked": (idx == p["guess_index"])
-                            }
-                            for idx, c in enumerate(three_choices)
-                        ]
+                        "receiverName": target["name"],
+                        "receiverAvatar": target["avatar"]
                     }
                     current_room.current_reveal = payload
                     await current_room.broadcast(payload)
 
-                # Step 2: 畫面 2 - 揭曉 user 抽到的收禮物的人 (對象名稱與頭像曝光)
+                # Step 2: 畫面 2 - 展示他收到的 3 張圖 (標示他選了哪張、每張圖是誰畫的、猜對猜錯)
                 elif step == 2:
                     payload = {
                         "event": "sync_reveal_step",
@@ -578,10 +571,13 @@ async def ws_handler(request):
                         "receiverName": target["name"],
                         "receiverAvatar": target["avatar"],
                         "pickedIndex": p["guess_index"],
+                        "isCorrect": p["guessed_correctly"],
                         "options": [
                             {
                                 "index": idx,
                                 "art": c["art"],
+                                "artistName": c["artistName"],
+                                "isTarget": c["isTarget"],
                                 "isPicked": (idx == p["guess_index"])
                             }
                             for idx, c in enumerate(three_choices)
@@ -590,7 +586,7 @@ async def ws_handler(request):
                     current_room.current_reveal = payload
                     await current_room.broadcast(payload)
 
-                # Step 3: 畫面 3 - 揭曉每張圖是誰畫的！+ 猜對與否 + 真正禮物願望！
+                # Step 3: 畫面 3 - 揭曉他抽到的送禮對象 想要什麼禮物！
                 elif step == 3:
                     p["is_revealed"] = True
                     payload = {
@@ -618,7 +614,7 @@ async def ws_handler(request):
                     }
                     current_room.current_reveal = payload
                     await current_room.broadcast(payload)
-                    # Also update player list for host to mark player as revealed
+                    # Update player list for host to mark player as revealed
                     await current_room.broadcast({
                         "event": "player_list_updated",
                         "players": current_room.get_player_list_summary()
