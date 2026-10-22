@@ -66,11 +66,12 @@ class Room:
     def __init__(self, code):
         self.code = code
         self.created_at = datetime.now()
-        self.phase = "lobby"  # lobby -> art -> guessing -> results
+        self.phase = "lobby"  # lobby -> art -> guessing -> live_reveal -> results
         self.host_ws = None
         self.players = {}  # player_id -> dict
         self.exchange_ring = []  # list of tuples or dicts
         self.matching_data = {}  # player_id -> { target_id, options, correct_index }
+        self.current_reveal = None  # stores current synchronized reveal step payload
 
     def add_player(self, player_id, name, avatar, ws=None):
         if player_id not in self.players:
@@ -87,7 +88,8 @@ class Room:
                 "guess_index": None,
                 "is_guess_submitted": False,
                 "guessed_correctly": None,
-                "picked_artist_name": None
+                "picked_artist_name": None,
+                "is_revealed": False
             }
         else:
             self.players[player_id]["name"] = name
@@ -107,7 +109,8 @@ class Room:
                 "avatar": p["avatar"],
                 "isArtSubmitted": p["is_art_submitted"],
                 "isGuessSubmitted": p["is_guess_submitted"],
-                "guessedCorrectly": p["guessed_correctly"]
+                "guessedCorrectly": p["guessed_correctly"],
+                "isRevealed": p.get("is_revealed", False)
             }
             for p in self.players.values()
         ]
@@ -210,7 +213,18 @@ async def ws_handler(request):
                     is_host = True
                     lan_ip = get_lan_ip()
                     port = request.app.get("port", 8000)
-                    join_url = get_join_url(request, code)
+                    reveal_roster = [
+                        {
+                            "id": p["id"],
+                            "name": p["name"],
+                            "avatar": p["avatar"],
+                            "isRevealed": p.get("is_revealed", False),
+                            "isGuessSubmitted": p["is_guess_submitted"]
+                        }
+                        for p in room.players.values()
+                        if p["is_art_submitted"]
+                    ] if room.phase == "live_reveal" else []
+
                     await ws.send_str(json.dumps({
                         "event": "room_joined_as_host",
                         "room": code,
@@ -218,7 +232,9 @@ async def ws_handler(request):
                         "players": room.get_player_list_summary(),
                         "lanIp": lan_ip,
                         "port": port,
-                        "joinUrl": join_url
+                        "joinUrl": join_url,
+                        "revealRoster": reveal_roster,
+                        "currentReveal": room.current_reveal
                     }))
                 else:
                     player_id = data.get("playerId") or f"p_{random.randint(10000, 99999)}"
@@ -255,9 +271,27 @@ async def ws_handler(request):
                             "targetName": m_data["targetName"],
                             "targetAvatar": m_data["targetAvatar"],
                             "options": m_data["optionsForPlayer"],
-                            "isGuessSubmitted": player["is_guess_submitted"],
-                            "guessResult": player.get("guess_result")
+                            "isGuessSubmitted": player["is_guess_submitted"]
                         }))
+                    elif room.phase == "live_reveal":
+                        reveal_roster = [
+                            {
+                                "id": p["id"],
+                                "name": p["name"],
+                                "avatar": p["avatar"],
+                                "isRevealed": p.get("is_revealed", False),
+                                "isGuessSubmitted": p["is_guess_submitted"]
+                            }
+                            for p in room.players.values()
+                            if p["is_art_submitted"]
+                        ]
+                        await ws.send_str(json.dumps({
+                            "event": "phase_changed",
+                            "phase": "live_reveal",
+                            "roster": reveal_roster
+                        }))
+                        if room.current_reveal:
+                            await ws.send_str(json.dumps(room.current_reveal))
 
             # --- 3. HOST STARTS ART PHASE ---
             elif action == "start_art_phase":
@@ -340,6 +374,9 @@ async def ws_handler(request):
                     for p in active_players
                 ]
 
+                # Balanced decoy tracking so every player's artwork appears roughly equally
+                decoy_counts = {p["id"]: 0 for p in active_players}
+
                 for giver in active_players:
                     target = current_room.players[giver["target_id"]]
 
@@ -352,18 +389,26 @@ async def ws_handler(request):
                         "isTarget": True
                     }
 
-                    # Distractors: pick 2 from other submitted artworks
-                    other_candidates = [
-                        c for c in all_arts_pool if c["id"] != target["id"]
+                    # Distractors: cannot be the target, and if 4+ players, avoid being giver themselves
+                    candidates = [
+                        c for c in all_arts_pool
+                        if c["id"] != target["id"] and (len(all_arts_pool) < 4 or c["id"] != giver["id"])
                     ]
 
+                    # Sort candidates by fewest appearances so far with random tie-breaker
+                    candidates.sort(key=lambda c: (decoy_counts.get(c["id"], 0), random.random()))
+
                     picked_distractors = []
-                    if len(other_candidates) >= 2:
-                        picked_distractors = random.sample(other_candidates, 2)
-                    elif len(other_candidates) == 1:
-                        picked_distractors = [other_candidates[0], random.choice(BUILTIN_DECOYS)]
+                    if len(candidates) >= 2:
+                        picked_distractors = candidates[:2]
+                    elif len(candidates) == 1:
+                        picked_distractors = [candidates[0], random.choice(BUILTIN_DECOYS)]
                     else:
                         picked_distractors = random.sample(BUILTIN_DECOYS, 2)
+
+                    for d in picked_distractors:
+                        if d["id"] in decoy_counts:
+                            decoy_counts[d["id"]] += 1
 
                     distractor_choices = [
                         {
@@ -382,7 +427,7 @@ async def ws_handler(request):
 
                     correct_idx = next(idx for idx, c in enumerate(three_choices) if c["isTarget"])
 
-                    # Sanitized options for player (hide artistName & isTarget initially to prevent inspect element cheating)
+                    # Sanitized options for player (hide artistName & isTarget initially)
                     client_options = [
                         {
                             "index": idx,
@@ -392,6 +437,7 @@ async def ws_handler(request):
                     ]
 
                     current_room.matching_data[giver["id"]] = {
+                        "targetId": target["id"],
                         "targetName": target["name"],
                         "targetAvatar": target["avatar"],
                         "targetWish": target["wish"],
@@ -406,6 +452,7 @@ async def ws_handler(request):
                     giver["is_guess_submitted"] = False
                     giver["guessed_correctly"] = None
                     giver["picked_artist_name"] = None
+                    giver["is_revealed"] = False
 
                     # Send to player
                     await current_room.send_to_player(giver["id"], {
@@ -422,7 +469,7 @@ async def ws_handler(request):
                     "players": current_room.get_player_list_summary()
                 })
 
-            # --- 6. PLAYER SUBMITS GUESS ---
+            # --- 6. PLAYER SUBMITS GUESS (STRICTLY NO SPOILERS) ---
             elif action == "submit_guess":
                 if not current_room or not current_player_id:
                     continue
@@ -436,29 +483,18 @@ async def ws_handler(request):
                 is_correct = (guess_idx == correct_idx)
 
                 picked_choice = m_data["threeChoices"][guess_idx]
-                target_choice = m_data["threeChoices"][correct_idx]
 
                 player["guess_index"] = guess_idx
                 player["is_guess_submitted"] = True
                 player["guessed_correctly"] = is_correct
                 player["picked_artist_name"] = picked_choice["artistName"]
 
-                guess_result = {
-                    "isCorrect": is_correct,
-                    "correctIndex": correct_idx,
-                    "targetName": m_data["targetName"],
-                    "targetWish": m_data["targetWish"],
-                    "targetHint": m_data["targetHint"],
-                    "pickedArtistName": picked_choice["artistName"],
-                    "pickedArt": picked_choice["art"],
-                    "correctArt": target_choice["art"]
-                }
-                player["guess_result"] = guess_result
-
-                # Send feedback to player
+                # Send lock confirmation to player WITHOUT revealing author or correctness
                 await ws.send_str(json.dumps({
-                    "event": "guess_result",
-                    **guess_result
+                    "event": "guess_locked_ack",
+                    "guessIndex": guess_idx,
+                    "targetName": m_data["targetName"],
+                    "targetAvatar": m_data["targetAvatar"]
                 }))
 
                 # Notify all of updated status
@@ -467,8 +503,129 @@ async def ws_handler(request):
                     "players": current_room.get_player_list_summary()
                 })
 
-            # --- 7. SHOW FINAL RESULTS & GALLERY ---
-            elif action == "show_results":
+            # --- 7. HOST STARTS SYNCHRONIZED LIVE REVEAL ---
+            elif action == "start_live_reveal":
+                if not current_room or not is_host:
+                    continue
+
+                current_room.phase = "live_reveal"
+                current_room.current_reveal = None
+
+                # Build active roster of players who participated
+                reveal_roster = [
+                    {
+                        "id": p["id"],
+                        "name": p["name"],
+                        "avatar": p["avatar"],
+                        "isRevealed": p.get("is_revealed", False),
+                        "isGuessSubmitted": p["is_guess_submitted"]
+                    }
+                    for p in current_room.players.values()
+                    if p["is_art_submitted"]
+                ]
+
+                await current_room.broadcast({
+                    "event": "phase_changed",
+                    "phase": "live_reveal",
+                    "roster": reveal_roster
+                })
+
+            # --- 8. HOST CONTROLS SYNCHRONIZED REVEAL STEPS (BROADCAST TO EVERYONE) ---
+            elif action == "host_sync_reveal":
+                if not current_room or not is_host:
+                    continue
+
+                user_id = data.get("userId")
+                step = int(data.get("step", 1))
+
+                p = current_room.players.get(user_id)
+                m_data = current_room.matching_data.get(user_id)
+                if not p or not m_data:
+                    continue
+
+                target = current_room.players[p["target_id"]]
+                three_choices = m_data["threeChoices"]
+
+                # Step 1: 畫面 1 - user 收到的 3 張圖 (標示 user 選了哪張，作者依然保密)
+                if step == 1:
+                    payload = {
+                        "event": "sync_reveal_step",
+                        "step": 1,
+                        "userId": p["id"],
+                        "userName": p["name"],
+                        "userAvatar": p["avatar"],
+                        "pickedIndex": p["guess_index"],
+                        "options": [
+                            {
+                                "index": idx,
+                                "art": c["art"],
+                                "isPicked": (idx == p["guess_index"])
+                            }
+                            for idx, c in enumerate(three_choices)
+                        ]
+                    }
+                    current_room.current_reveal = payload
+                    await current_room.broadcast(payload)
+
+                # Step 2: 畫面 2 - 揭曉 user 抽到的收禮物的人 (對象名稱與頭像曝光)
+                elif step == 2:
+                    payload = {
+                        "event": "sync_reveal_step",
+                        "step": 2,
+                        "userId": p["id"],
+                        "userName": p["name"],
+                        "userAvatar": p["avatar"],
+                        "receiverName": target["name"],
+                        "receiverAvatar": target["avatar"],
+                        "pickedIndex": p["guess_index"],
+                        "options": [
+                            {
+                                "index": idx,
+                                "art": c["art"],
+                                "isPicked": (idx == p["guess_index"])
+                            }
+                            for idx, c in enumerate(three_choices)
+                        ]
+                    }
+                    current_room.current_reveal = payload
+                    await current_room.broadcast(payload)
+
+                # Step 3: 畫面 3 - 揭曉每張圖是誰畫的！+ 猜對與否 + 真正禮物願望！
+                elif step == 3:
+                    p["is_revealed"] = True
+                    payload = {
+                        "event": "sync_reveal_step",
+                        "step": 3,
+                        "userId": p["id"],
+                        "userName": p["name"],
+                        "userAvatar": p["avatar"],
+                        "receiverName": target["name"],
+                        "receiverAvatar": target["avatar"],
+                        "receiverWish": target["wish"],
+                        "receiverHint": target["hint"],
+                        "pickedIndex": p["guess_index"],
+                        "isCorrect": p["guessed_correctly"],
+                        "options": [
+                            {
+                                "index": idx,
+                                "art": c["art"],
+                                "artistName": c["artistName"],
+                                "isTarget": c["isTarget"],
+                                "isPicked": (idx == p["guess_index"])
+                            }
+                            for idx, c in enumerate(three_choices)
+                        ]
+                    }
+                    current_room.current_reveal = payload
+                    await current_room.broadcast(payload)
+                    # Also update player list for host to mark player as revealed
+                    await current_room.broadcast({
+                        "event": "player_list_updated",
+                        "players": current_room.get_player_list_summary()
+                    })
+
+            # --- 9. SHOW FINAL SUMMARY (EXCHANGE RING & FULL GALLERY) ---
+            elif action == "show_final_summary":
                 if not current_room or not is_host:
                     continue
 
@@ -478,7 +635,6 @@ async def ws_handler(request):
                 gallery = []
                 for p in current_room.players.values():
                     if p.get("art"):
-                        # who was assigned to guess this player?
                         guesser = next((g for g in current_room.players.values() if g.get("target_id") == p["id"]), None)
                         gallery.append({
                             "playerId": p["id"],
@@ -508,7 +664,6 @@ async def ws_handler(request):
                         "pickedArtistName": giver["picked_artist_name"] if giver else None
                     })
 
-                # Leaderboard & awards
                 correct_detectives = [p["name"] for p in current_room.players.values() if p.get("guessed_correctly") is True]
 
                 results_payload = {
@@ -521,11 +676,23 @@ async def ws_handler(request):
 
                 await current_room.broadcast(results_payload)
 
-            # --- 8. RESET / PLAY AGAIN ---
+            # --- 10. PLAYER LOGOUT ---
+            elif action == "player_logout":
+                if current_room and current_player_id:
+                    current_room.remove_player(current_player_id)
+                    await ws.send_str(json.dumps({"event": "logged_out"}))
+                    await current_room.broadcast({
+                        "event": "player_list_updated",
+                        "players": current_room.get_player_list_summary()
+                    })
+                    current_player_id = None
+
+            # --- 11. RESET / PLAY AGAIN ---
             elif action == "reset_game":
                 if not current_room or not is_host:
                     continue
                 current_room.phase = "lobby"
+                current_room.current_reveal = None
                 current_room.exchange_ring = []
                 current_room.matching_data = {}
                 for p in current_room.players.values():
@@ -538,7 +705,7 @@ async def ws_handler(request):
                     p["is_guess_submitted"] = False
                     p["guessed_correctly"] = None
                     p["picked_artist_name"] = None
-                    p["guess_result"] = None
+                    p["is_revealed"] = False
 
                 await current_room.broadcast({
                     "event": "game_reset",

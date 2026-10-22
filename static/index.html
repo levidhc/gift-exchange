@@ -34,6 +34,11 @@
             </div>
 
             <div class="header-actions">
+                <div id="header-user-badge" class="badge-user" style="display: none;">
+                    <span id="badge-user-avatar">🎅</span>
+                    <span id="badge-user-name">玩家</span>
+                    <button id="btn-logout" class="btn-logout-chip" type="button" title="登出並離開房間">🚪 登出</button>
+                </div>
                 <div id="header-room-badge" class="badge-room" style="display: none;">
                     <span id="badge-room-code">房間：----</span>
                 </div>
@@ -104,6 +109,47 @@
             <!-- ================= VIEW 2: HOST LOBBY ================= -->
             <section id="view-host-lobby" class="view-section">
                 <div class="glass-panel">
+                    <!-- Host Game Phase Flowchart -->
+                    <div class="host-flowchart-card">
+                        <div class="flowchart-title-bar">
+                            <span class="flowchart-heading">🧭 主持人流程指引（全場進度概覽）</span>
+                            <span class="current-phase-pill" id="current-phase-pill">當前：1. 玩家集結中</span>
+                        </div>
+                        <div class="flowchart-steps-row" id="host-flowchart-steps">
+                            <div class="flow-step active" id="fstep-lobby" data-step="1">
+                                <div class="step-circle"><span class="step-num">1</span></div>
+                                <div class="step-text">
+                                    <div class="step-name">🎮 玩家集結</div>
+                                    <div class="step-sub">掃碼加入大廳</div>
+                                </div>
+                            </div>
+                            <div class="flow-arrow">➔</div>
+                            <div class="flow-step" id="fstep-art" data-step="2">
+                                <div class="step-circle"><span class="step-num">2</span></div>
+                                <div class="step-text">
+                                    <div class="step-name">🎨 線索創作</div>
+                                    <div class="step-sub">畫出心願謎題</div>
+                                </div>
+                            </div>
+                            <div class="flow-arrow">➔</div>
+                            <div class="flow-step" id="fstep-guessing" data-step="3">
+                                <div class="step-circle"><span class="step-num">3</span></div>
+                                <div class="step-text">
+                                    <div class="step-name">🎯 心機猜題</div>
+                                    <div class="step-sub">三選一神探推理</div>
+                                </div>
+                            </div>
+                            <div class="flow-arrow">➔</div>
+                            <div class="flow-step" id="fstep-live_reveal" data-step="4">
+                                <div class="step-circle"><span class="step-num">4</span></div>
+                                <div class="step-text">
+                                    <div class="step-name">🏆 全場同步揭曉</div>
+                                    <div class="step-sub">逐人翻牌與閉環</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="host-lobby-grid">
                         <!-- Left: QR Code & Join Link -->
                         <div class="qr-card">
@@ -152,8 +198,8 @@
                                             0 人已完成猜題
                                         </div>
                                     </div>
-                                    <button id="btn-host-show-results-main" class="btn btn-gold btn-lg btn-block" type="button">
-                                        🏆 開啟全場大揭曉！
+                                    <button id="btn-host-start-live-reveal" class="btn btn-gold btn-lg btn-block" type="button">
+                                        🎬 進入全場同步大揭曉！ ➔
                                     </button>
                                 </div>
                             </div>
@@ -311,31 +357,153 @@
                         <p id="target-name-desc">請從以下 3 張神秘線索圖中，找出哪一張是【小明】畫的！</p>
                     </div>
 
-                    <!-- 3 Cards -->
+                    <div class="guess-secret-notice">
+                        <span>🤫 <strong>絕對保密承諾：</strong> 送出猜測後結果將直接封存，<strong>絕不提前揭曉對錯與作者</strong>！請猜猜看哪張圖是他畫的，並記住這份線索，在會議當天為他準備好交換禮物喔！</span>
+                    </div>
+
+                    <!-- 3 Cards Selection -->
                     <div class="three-cards-grid" id="three-cards-container">
                         <!-- Card 0, 1, 2 injected by JS -->
                     </div>
 
                     <!-- Confirm button -->
-                    <div style="text-align: center; margin-bottom: 24px;">
+                    <div style="text-align: center; margin-bottom: 24px;" id="guessing-submit-wrap">
                         <button id="btn-confirm-guess" class="btn btn-gold btn-lg" type="button" disabled style="min-width: 280px;">
                             請先選定一張圖片
                         </button>
                     </div>
 
-                    <!-- Instant Result Pop-up Banner -->
-                    <div id="guess-result-banner" class="result-banner" style="display:none;"></div>
+                    <!-- Locked Confirmation Screen (Shown after player submits guess) -->
+                    <div id="guess-locked-screen" class="guess-locked-container" style="display:none;">
+                        <div class="locked-badge-icon">🔒</div>
+                        <h3 style="font-size:1.6rem; color:var(--festive-gold); margin-bottom:8px;">猜測已成功鎖定！</h3>
+                        <p style="color:var(--text-main); font-size:1.05rem; margin-bottom:18px;" id="locked-choice-summary">
+                            你已選定第 1 張圖作為【小明】畫的禮物線索。
+                        </p>
+                        <div class="locked-mission-card">
+                            <div class="mission-header">
+                                <span style="font-size:1.3rem;">🎁</span>
+                                <strong>實體會議當天任務備忘錄</strong>
+                            </div>
+                            <p>
+                                答案已嚴密封存至主持人的保險箱中，在聚會會議當天的主持人大揭曉前，<strong>任何人（包含你自己）都無法偷看</strong>！<br>
+                                請牢記你剛才猜測的線索圖，<strong>在會議當天為【<span id="locked-target-name-hint">對象</span>】精心準備好交換禮物</strong>！
+                            </p>
+                        </div>
+                        <div class="locked-waiting-bar">
+                            <span class="pulsing-radar"></span>
+                            <span>答案已安全送達！請等待主持人開啟最後的全場同步大揭曉... 🎬</span>
+                        </div>
+                    </div>
 
                     <!-- Host control for ending guessing -->
                     <div style="text-align: center; margin-top: 24px;">
                         <button id="btn-host-trigger-results" class="btn btn-primary btn-lg" style="display:none;" type="button">
-                            🏆 大家都猜完了，進入全場大揭曉！
+                            🎬 所有人已完成猜題，進入全場同步大揭曉！ ➔
                         </button>
                     </div>
                 </div>
             </section>
 
-            <!-- ================= VIEW 7: FINAL RESULTS & SHOWCASE ================= -->
+            <!-- ================= VIEW 7: SYNCHRONIZED LIVE REVEAL ================= -->
+            <section id="view-live-reveal" class="view-section">
+                <div class="live-reveal-wrapper">
+                    <!-- Host Control Bar (Only rendered/active for Host) -->
+                    <div id="host-reveal-control-panel" class="host-control-panel" style="display:none;">
+                        <div class="panel-header">
+                            <div>
+                                <h3 style="font-size:1.2rem; color:var(--festive-gold);">👑 主持人同步導播台</h3>
+                                <p style="font-size:0.85rem; color:var(--text-muted); margin:0;">
+                                    點選下方玩家播放同步動畫。全場所有人的手機/螢幕畫面將完全同步！
+                                </p>
+                            </div>
+                            <button id="btn-host-finish-live-reveal" class="btn btn-secondary btn-sm" type="button">
+                                🏁 結束揭曉 ➔ 查看全場贈禮閉環與展覽
+                            </button>
+                        </div>
+
+                        <!-- Player selection roster -->
+                        <div class="reveal-roster-bar" id="reveal-roster-bar">
+                            <!-- Injected player selector buttons -->
+                        </div>
+
+                        <!-- 3-step action buttons for host -->
+                        <div id="host-step-controls" class="step-action-bar" style="display:none;">
+                            <div class="current-spotlight-user" id="current-spotlight-user-label">
+                                正在揭曉：【小華】
+                            </div>
+                            <div class="step-btn-row">
+                                <button id="btn-step-action-1" class="btn btn-step active" type="button">
+                                    1️⃣ 畫面 1：展示他收到的 3 張圖
+                                </button>
+                                <button id="btn-step-action-2" class="btn btn-step" type="button">
+                                    2️⃣ 畫面 2：揭曉他抽到的送禮對象！
+                                </button>
+                                <button id="btn-step-action-3" class="btn btn-step btn-gold" type="button">
+                                    3️⃣ 畫面 3：震撼翻牌！揭曉每張圖作者與願望！
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Synchronized Stage (Synchronized across ALL devices in the room) -->
+                    <div class="sync-stage" id="sync-stage">
+                        <!-- Idle Stage (before host selects a player) -->
+                        <div id="stage-idle-state" class="stage-card stage-idle">
+                            <div style="font-size:4.5rem; animation: gentleWiggle 3s infinite;">🎬</div>
+                            <h2>全場同步大揭曉時刻</h2>
+                            <p style="color:var(--text-muted); font-size:1.05rem; max-width:520px; margin:12px auto;">
+                                主持人正在準備點播玩家！請大家注視螢幕，見證心靈相通的奇蹟！✨
+                            </p>
+                        </div>
+
+                        <!-- Active Spotlight Stage -->
+                        <div id="stage-active-state" class="stage-card" style="display:none;">
+                            <!-- Stage Top Banner -->
+                            <div class="spotlight-header">
+                                <div class="guesser-spotlight">
+                                    <span class="spotlight-avatar" id="sync-guesser-avatar">🎅</span>
+                                    <div>
+                                        <span class="spotlight-tag">送禮玩家</span>
+                                        <h3 class="spotlight-name" id="sync-guesser-name">小華</h3>
+                                    </div>
+                                </div>
+
+                                <!-- Step 2 Target Spotlight -->
+                                <div class="target-spotlight" id="sync-target-spotlight" style="display:none;">
+                                    <div class="gift-direction-arrow">🎁 抽到的送禮對象是 ➔</div>
+                                    <div class="target-box">
+                                        <span class="target-avatar" id="sync-target-avatar">🎯</span>
+                                        <div>
+                                            <span class="target-sub">收禮對象</span>
+                                            <h3 class="target-name" id="sync-target-name">小美</h3>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Step 3 Target Wish & Clue Box -->
+                            <div id="sync-wish-banner" class="sync-wish-box" style="display:none;">
+                                <div class="wish-title">
+                                    <span>🎁 【<span id="sync-wish-target-name">小美</span>】真正的禮物願望：</span>
+                                    <strong id="sync-wish-text" style="color:var(--festive-gold); font-size:1.2rem;">無線耳機</strong>
+                                </div>
+                                <div id="sync-hint-row" class="wish-hint" style="display:none;">
+                                    💭 創作線索說明：「<span id="sync-hint-text"></span>」
+                                </div>
+                                <div id="sync-result-verdict" class="result-verdict"></div>
+                            </div>
+
+                            <!-- 3 Synchronized Cards Display -->
+                            <div class="sync-cards-grid" id="sync-cards-grid">
+                                <!-- Cards injected here with 3D Flip effects -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ================= VIEW 8: FINAL RESULTS & SHOWCASE ================= -->
             <section id="view-results" class="view-section">
                 <div class="glass-panel">
                     <div class="showcase-header">

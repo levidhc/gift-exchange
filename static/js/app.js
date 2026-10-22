@@ -15,6 +15,11 @@ const AppState = {
     joinUrl: '',
     drawingStudio: null,
     selectedGuessIndex: null,
+
+    // Live Reveal state
+    revealRoster: [],
+    activeRevealUserId: null,
+    activeRevealStep: 1,
     
     // Pass and Play local game state
     localGame: {
@@ -148,6 +153,68 @@ function initApp() {
 
     setupHomeButtons();
     setupPassAndPlayUI();
+
+    // Logout button
+    const btnLogout = $('btn-logout');
+    if (btnLogout) {
+        btnLogout.addEventListener('click', () => {
+            if (confirm('確定要登出並離開房間嗎？')) {
+                logoutCurrentUser();
+            }
+        });
+    }
+
+    // Host start live reveal buttons
+    const btnHostStartLive = $('btn-host-start-live-reveal');
+    if (btnHostStartLive) {
+        btnHostStartLive.onclick = () => {
+            if (AppState.ws && AppState.ws.readyState === WebSocket.OPEN) {
+                AppState.ws.send(JSON.stringify({
+                    action: 'start_live_reveal',
+                    room: AppState.roomCode
+                }));
+            }
+        };
+    }
+
+    const btnHostTriggerResults = $('btn-host-trigger-results');
+    if (btnHostTriggerResults) {
+        btnHostTriggerResults.onclick = () => {
+            if (AppState.ws && AppState.ws.readyState === WebSocket.OPEN) {
+                AppState.ws.send(JSON.stringify({
+                    action: 'start_live_reveal',
+                    room: AppState.roomCode
+                }));
+            }
+        };
+    }
+
+    // Host finish live reveal button
+    const btnHostFinishLive = $('btn-host-finish-live-reveal');
+    if (btnHostFinishLive) {
+        btnHostFinishLive.onclick = () => {
+            if (AppState.ws && AppState.ws.readyState === WebSocket.OPEN) {
+                AppState.ws.send(JSON.stringify({
+                    action: 'show_final_summary',
+                    room: AppState.roomCode
+                }));
+            }
+        };
+    }
+
+    // Host step buttons
+    $('btn-step-action-1').onclick = () => {
+        if (!AppState.activeRevealUserId) return;
+        sendHostSyncRevealStep(AppState.activeRevealUserId, 1);
+    };
+    $('btn-step-action-2').onclick = () => {
+        if (!AppState.activeRevealUserId) return;
+        sendHostSyncRevealStep(AppState.activeRevealUserId, 2);
+    };
+    $('btn-step-action-3').onclick = () => {
+        if (!AppState.activeRevealUserId) return;
+        sendHostSyncRevealStep(AppState.activeRevealUserId, 3);
+    };
 }
 
 // Open Zoom Modal
@@ -490,6 +557,348 @@ function connectWebSocket(role, roomCode = '', name = '', avatar = '') {
     };
 }
 
+// ==========================================================================
+// Host Flowchart & User Profile Helpers
+// ==========================================================================
+
+function updateHostFlowchart(phase) {
+    const phases = ['lobby', 'art', 'guessing', 'live_reveal', 'results'];
+    const phaseNames = {
+        'lobby': '當前：1. 玩家集結中',
+        'art': '當前：2. 創作線索中',
+        'guessing': '當前：3. 心機猜題中',
+        'live_reveal': '當前：4. 全場同步揭曉中',
+        'results': '當前：交換禮物大圓滿 🎉'
+    };
+
+    const pill = $('current-phase-pill');
+    if (pill && phaseNames[phase]) {
+        pill.innerText = phaseNames[phase];
+    }
+
+    const currentIdx = phases.indexOf(phase);
+    const steps = [
+        { id: 'fstep-lobby', idx: 0, num: 1 },
+        { id: 'fstep-art', idx: 1, num: 2 },
+        { id: 'fstep-guessing', idx: 2, num: 3 },
+        { id: 'fstep-live_reveal', idx: 3, num: 4 }
+    ];
+
+    steps.forEach(s => {
+        const el = $(s.id);
+        if (!el) return;
+        el.classList.remove('active', 'completed');
+        const numSpan = el.querySelector('.step-num');
+
+        if (s.idx < currentIdx) {
+            el.classList.add('completed');
+            if (numSpan) numSpan.innerText = '✓';
+        } else if (s.idx === currentIdx) {
+            el.classList.add('active');
+            if (numSpan) numSpan.innerText = s.num;
+        } else {
+            if (numSpan) numSpan.innerText = s.num;
+        }
+    });
+}
+
+function updateHeaderProfile(name, avatar, isHost = false) {
+    const userBadge = $('header-user-badge');
+    const avatarSpan = $('badge-user-avatar');
+    const nameSpan = $('badge-user-name');
+    if (userBadge && nameSpan && avatarSpan) {
+        avatarSpan.innerText = avatar || (isHost ? '👑' : '🎁');
+        nameSpan.innerText = name || (isHost ? '主持人' : '玩家');
+        userBadge.style.display = 'inline-flex';
+    }
+}
+
+function logoutCurrentUser() {
+    if (AppState.ws && AppState.ws.readyState === WebSocket.OPEN) {
+        AppState.ws.send(JSON.stringify({
+            action: 'player_logout',
+            room: AppState.roomCode
+        }));
+    }
+    handleLogoutCleanup();
+}
+
+function handleLogoutCleanup() {
+    try {
+        if (AppState.ws) AppState.ws.close();
+    } catch (e) {}
+
+    sessionStorage.removeItem('player_id');
+    sessionStorage.removeItem('room_code');
+    AppState.playerId = null;
+    AppState.playerName = '';
+    AppState.roomCode = null;
+    AppState.role = null;
+
+    const userBadge = $('header-user-badge');
+    if (userBadge) userBadge.style.display = 'none';
+    const roomBadge = $('header-room-badge');
+    if (roomBadge) roomBadge.style.display = 'none';
+
+    showView('view-home');
+    showToast('您已成功登出房間 👋');
+}
+
+// ==========================================================================
+// Guess Locked Notification (Strictly No Spoilers)
+// ==========================================================================
+
+function showGuessLockedScreen(data) {
+    const cardsContainer = $('three-cards-container');
+    const submitWrap = $('guessing-submit-wrap');
+    if (cardsContainer) cardsContainer.style.display = 'none';
+    if (submitWrap) submitWrap.style.display = 'none';
+
+    const lockedScreen = $('guess-locked-screen');
+    if (lockedScreen) {
+        lockedScreen.style.display = 'block';
+        const summary = $('locked-choice-summary');
+        if (summary) {
+            summary.innerHTML = `你已選定第 <strong>${(data.guessIndex !== undefined ? data.guessIndex : 0) + 1}</strong> 張圖作為【${data.targetName}】畫的禮物線索。`;
+        }
+        const targetHint = $('locked-target-name-hint');
+        if (targetHint) {
+            targetHint.innerText = data.targetName;
+        }
+    }
+    if (window.sound) window.sound.playChime();
+}
+
+// ==========================================================================
+// Synchronized Live Reveal Stage (Controlled by Host, Synced to All)
+// ==========================================================================
+
+function enterLiveRevealPhase(roster) {
+    AppState.revealRoster = roster || [];
+    AppState.activeRevealUserId = null;
+    AppState.activeRevealStep = 1;
+
+    showView('view-live-reveal');
+    updateHostFlowchart('live_reveal');
+
+    if (AppState.role === 'host') {
+        $('host-reveal-control-panel').style.display = 'block';
+        renderHostRevealRoster();
+    } else {
+        $('host-reveal-control-panel').style.display = 'none';
+    }
+
+    $('stage-idle-state').style.display = 'block';
+    $('stage-active-state').style.display = 'none';
+}
+
+function renderHostRevealRoster() {
+    const rosterBar = $('reveal-roster-bar');
+    if (!rosterBar) return;
+    rosterBar.innerHTML = '';
+
+    AppState.revealRoster.forEach(player => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `roster-player-btn ${player.isRevealed ? 'revealed' : ''} ${player.id === AppState.activeRevealUserId ? 'active' : ''}`;
+        btn.innerHTML = `
+            <span>${player.avatar}</span>
+            <span>${player.name}</span>
+            <span style="font-size:0.75rem; opacity:0.8;">${player.isRevealed ? '✅ 已揭曉' : '待揭曉'}</span>
+        `;
+
+        btn.onclick = () => {
+            AppState.activeRevealUserId = player.id;
+            AppState.activeRevealStep = 1;
+            renderHostRevealRoster();
+
+            $('host-step-controls').style.display = 'flex';
+            $('current-spotlight-user-label').innerText = `正在揭曉：【${player.name}】（第 1 步）`;
+            updateStepButtonsActive(1);
+
+            sendHostSyncRevealStep(player.id, 1);
+        };
+
+        rosterBar.appendChild(btn);
+    });
+}
+
+function updateStepButtonsActive(step) {
+    const s1 = $('btn-step-action-1');
+    const s2 = $('btn-step-action-2');
+    const s3 = $('btn-step-action-3');
+    if (s1) s1.classList.toggle('active', step === 1);
+    if (s2) s2.classList.toggle('active', step === 2);
+    if (s3) s3.classList.toggle('active', step === 3);
+}
+
+function sendHostSyncRevealStep(userId, step) {
+    if (AppState.ws && AppState.ws.readyState === WebSocket.OPEN) {
+        AppState.ws.send(JSON.stringify({
+            action: 'host_sync_reveal',
+            room: AppState.roomCode,
+            userId: userId,
+            step: step
+        }));
+    }
+}
+
+function handleSyncRevealStep(data) {
+    $('stage-idle-state').style.display = 'none';
+    $('stage-active-state').style.display = 'block';
+
+    const step = data.step;
+    AppState.activeRevealUserId = data.userId;
+    AppState.activeRevealStep = step;
+
+    // Spotlight guesser header
+    $('sync-guesser-avatar').innerText = data.userAvatar || '🎅';
+    $('sync-guesser-name').innerText = data.userName || '玩家';
+
+    if (AppState.role === 'host') {
+        $('host-step-controls').style.display = 'flex';
+        $('current-spotlight-user-label').innerText = `正在揭曉：【${data.userName}】（第 ${step} 步）`;
+        updateStepButtonsActive(step);
+    }
+
+    // Step 1: 畫面 1 - user 收到的 3 張圖 (標示猜測哪張，作者依然保密)
+    if (step === 1) {
+        $('sync-target-spotlight').style.display = 'none';
+        $('sync-wish-banner').style.display = 'none';
+        renderSyncCardsGrid(data.options, data.pickedIndex, false);
+        if (window.sound) window.sound.playShuffle();
+    }
+    // Step 2: 畫面 2 - 揭曉 user 抽到的收禮物的人
+    else if (step === 2) {
+        $('sync-target-spotlight').style.display = 'flex';
+        $('sync-target-avatar').innerText = data.receiverAvatar || '🎯';
+        $('sync-target-name').innerText = data.receiverName || '幸運兒';
+        $('sync-wish-banner').style.display = 'none';
+        renderSyncCardsGrid(data.options, data.pickedIndex, false);
+        if (window.sound) window.sound.playChime();
+    }
+    // Step 3: 畫面 3 - 震撼翻牌！揭曉每張圖作者與願望！
+    else if (step === 3) {
+        $('sync-target-spotlight').style.display = 'flex';
+        $('sync-target-avatar').innerText = data.receiverAvatar || '🎯';
+        $('sync-target-name').innerText = data.receiverName || '幸運兒';
+
+        const wishBox = $('sync-wish-banner');
+        wishBox.style.display = 'block';
+        $('sync-wish-target-name').innerText = data.receiverName;
+        $('sync-wish-text').innerText = data.receiverWish || '神秘禮物心願';
+
+        if (data.receiverHint) {
+            $('sync-hint-row').style.display = 'block';
+            $('sync-hint-text').innerText = data.receiverHint;
+        } else {
+            $('sync-hint-row').style.display = 'none';
+        }
+
+        const verdict = $('sync-result-verdict');
+        if (data.isCorrect) {
+            verdict.className = 'result-verdict correct';
+            verdict.innerHTML = `🎉 太神了！【${data.userName}】成功猜對【${data.receiverName}】的線索圖！心靈相通！`;
+            triggerConfetti();
+            if (window.sound) window.sound.playPartyCheer();
+        } else {
+            verdict.className = 'result-verdict wrong';
+            verdict.innerHTML = `💨 哎呀～【${data.userName}】猜錯啦！原來這才是【${data.receiverName}】的真正畫作！`;
+            if (window.sound) window.sound.playWrong();
+        }
+
+        renderSyncCardsGrid(data.options, data.pickedIndex, true);
+
+        // Mark player in roster as revealed
+        const pInRoster = (AppState.revealRoster || []).find(r => r.id === data.userId);
+        if (pInRoster) {
+            pInRoster.isRevealed = true;
+            if (AppState.role === 'host') {
+                renderHostRevealRoster();
+            }
+        }
+    }
+}
+
+function renderSyncCardsGrid(options, pickedIndex, isFlipped) {
+    const grid = $('sync-cards-grid');
+    grid.innerHTML = '';
+
+    (options || []).forEach((opt, idx) => {
+        const isPicked = (idx === pickedIndex);
+        const card = document.createElement('div');
+        card.className = `sync-card ${isPicked ? 'picked' : ''} ${isFlipped ? 'flipped' : ''}`;
+
+        const cardNumLetter = String.fromCharCode(65 + idx);
+        let frontAuthorHtml = `<span class="author-mystery-tag">❓ 神秘畫作作者（保密中）</span>`;
+        let backAuthorHtml = '';
+
+        if (isFlipped) {
+            const isTarget = opt.isTarget;
+            let verdictTag = '';
+            if (isPicked) {
+                verdictTag = isTarget 
+                    ? `<span style="color:#34d399; font-weight:800; margin-left:6px;">🎯 【${opt.artistName}】（猜中了！）</span>` 
+                    : `<span style="color:#fb7185; font-weight:800; margin-left:6px;">💨 【${opt.artistName}】（猜錯）</span>`;
+            } else {
+                verdictTag = isTarget 
+                    ? `<span style="color:#34d399; font-weight:800; margin-left:6px;">🎯 【${opt.artistName}】（目標本人）</span>` 
+                    : `<span style="color:#94a3b8; margin-left:6px;">【${opt.artistName}】</span>`;
+            }
+            backAuthorHtml = `
+                <div class="author-revealed-tag ${isTarget ? 'target-match' : ''}">
+                    <span>🎨 畫作者：</span>
+                    ${verdictTag}
+                </div>
+            `;
+        }
+
+        card.innerHTML = `
+            <div class="sync-card-inner">
+                <!-- Front Side -->
+                <div class="sync-card-front">
+                    ${isPicked ? `<span class="card-picked-badge">🎯 玩家選定此張</span>` : ''}
+                    <div style="padding:10px 14px; display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.25);">
+                        <span style="font-weight:700; color:var(--festive-gold);">選項 ${cardNumLetter}</span>
+                    </div>
+                    <div class="card-stage-img-wrap">
+                        <img src="${opt.art}" alt="選項 ${cardNumLetter}" />
+                    </div>
+                    <div class="card-stage-footer">
+                        ${frontAuthorHtml}
+                    </div>
+                </div>
+
+                <!-- Back Side (Flipped in Step 3) -->
+                <div class="sync-card-back">
+                    ${isPicked ? `<span class="card-picked-badge">🎯 玩家選定此張</span>` : ''}
+                    <div style="padding:10px 14px; display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.35);">
+                        <span style="font-weight:700; color:var(--festive-gold);">選項 ${cardNumLetter} 真相</span>
+                    </div>
+                    <div class="card-stage-img-wrap">
+                        <img src="${opt.art}" alt="選項 ${cardNumLetter}" />
+                    </div>
+                    <div class="card-stage-footer">
+                        ${backAuthorHtml}
+                    </div>
+                </div>
+            </div>
+        `;
+
+        grid.appendChild(card);
+    });
+
+    if (isFlipped) {
+        setTimeout(() => {
+            $$('.sync-card').forEach(c => c.classList.add('flipped'));
+        }, 50);
+    }
+}
+
+// ==========================================================================
+// WebSocket Event Dispatcher
+// ==========================================================================
+
 function handleServerEvent(data) {
     const ev = data.event;
     console.log('Server Event:', ev, data);
@@ -498,6 +907,8 @@ function handleServerEvent(data) {
         localStorage.setItem('host_room_code', data.room);
         sessionStorage.setItem('host_room_code', data.room);
         renderHostLobby(data.room, data.joinUrl);
+        updateHostFlowchart('lobby');
+        updateHeaderProfile('主持人', '👑', true);
         if (window.sound) window.sound.playChime();
     }
     else if (ev === 'room_joined_as_host') {
@@ -509,6 +920,8 @@ function handleServerEvent(data) {
 
         renderHostLobby(data.room, data.joinUrl);
         updateHostPlayerList(data.players);
+        updateHostFlowchart(data.phase);
+        updateHeaderProfile('主持人', '👑', true);
 
         if (data.phase === 'art') {
             $('host-art-progress-panel').style.display = 'block';
@@ -516,26 +929,26 @@ function handleServerEvent(data) {
             $('host-art-progress-panel').style.display = 'none';
             $('btn-host-start-art').style.display = 'none';
             $('host-guessing-progress-panel').style.display = 'block';
-            $('btn-host-show-results-main').onclick = () => {
-                if (AppState.ws && AppState.ws.readyState === WebSocket.OPEN) {
-                    AppState.ws.send(JSON.stringify({
-                        action: 'show_results',
-                        room: AppState.roomCode
-                    }));
-                }
-            };
+        } else if (data.phase === 'live_reveal') {
+            enterLiveRevealPhase(data.revealRoster);
+            if (data.currentReveal) {
+                handleSyncRevealStep(data.currentReveal);
+            }
         }
         showToast(`已成功以主持人身分返回房間 [${data.room}]！👑`);
         if (window.sound) window.sound.playChime();
     }
     else if (ev === 'room_joined') {
         AppState.playerId = data.playerId;
+        AppState.playerName = data.name;
+        AppState.playerAvatar = data.avatar;
         sessionStorage.setItem('player_id', data.playerId);
         sessionStorage.setItem('room_code', data.room);
         AppState.roomCode = data.room;
 
         $('badge-room-code').innerText = `房間：${data.room}`;
         $('header-room-badge').style.display = 'inline-flex';
+        updateHeaderProfile(data.name, data.avatar, false);
 
         $('player-lobby-avatar').innerText = data.avatar;
         $('player-lobby-name').innerText = data.name;
@@ -546,6 +959,8 @@ function handleServerEvent(data) {
             showView('view-art-waiting');
         } else if (data.phase === 'guessing') {
             // Handled when options arrive
+        } else if (data.phase === 'live_reveal') {
+            enterLiveRevealPhase([]);
         } else {
             showView('view-player-lobby');
         }
@@ -559,11 +974,12 @@ function handleServerEvent(data) {
         }
     }
     else if (ev === 'phase_changed') {
+        updateHostFlowchart(data.phase);
+
         if (data.phase === 'art') {
             if (AppState.role === 'player') {
                 enterArtStudioView();
             } else if (AppState.role === 'host') {
-                // Host shows live submissions progress
                 $('host-art-progress-panel').style.display = 'block';
                 showToast('作畫階段開始！請玩家們在手機上創作線索圖 🎨');
             }
@@ -572,15 +988,10 @@ function handleServerEvent(data) {
                 $('host-art-progress-panel').style.display = 'none';
                 $('btn-host-start-art').style.display = 'none';
                 $('host-guessing-progress-panel').style.display = 'block';
-                $('btn-host-show-results-main').onclick = () => {
-                    if (AppState.ws && AppState.ws.readyState === WebSocket.OPEN) {
-                        AppState.ws.send(JSON.stringify({
-                            action: 'show_results',
-                            room: AppState.roomCode
-                        }));
-                    }
-                };
             }
+        } else if (data.phase === 'live_reveal') {
+            enterLiveRevealPhase(data.roster);
+            showToast('🎬 全場同步大揭曉開始！請大家注視螢幕！');
         }
     }
     else if (ev === 'art_submitted_ack') {
@@ -589,16 +1000,24 @@ function handleServerEvent(data) {
         if (window.sound) window.sound.playChime();
     }
     else if (ev === 'start_guessing_phase') {
-        renderGuessingView(data.targetName, data.targetAvatar, data.options);
+        renderGuessingView(data.targetName, data.targetAvatar, data.options, data.isGuessSubmitted);
     }
-    else if (ev === 'guess_result') {
-        renderGuessResultBanner(data);
+    else if (ev === 'guess_locked_ack') {
+        showGuessLockedScreen(data);
+    }
+    else if (ev === 'sync_reveal_step') {
+        handleSyncRevealStep(data);
     }
     else if (ev === 'final_results') {
+        updateHostFlowchart('results');
         renderFinalShowcase(data);
+    }
+    else if (ev === 'logged_out') {
+        handleLogoutCleanup();
     }
     else if (ev === 'game_reset') {
         showToast('遊戲已重置，準備開始新的一局！');
+        updateHostFlowchart('lobby');
         if (AppState.role === 'host') {
             showView('view-host-lobby');
         } else {
@@ -782,10 +1201,21 @@ function handleArtSubmission() {
 // Guessing Phase: 3-Image Selection UI
 // ==========================================================================
 
-function renderGuessingView(targetName, targetAvatar, options) {
+function renderGuessingView(targetName, targetAvatar, options, isGuessSubmitted = false) {
     $('target-avatar-display').innerText = targetAvatar || '🎯';
     $('target-name-display').innerText = targetName;
     $('target-name-desc').innerText = `請從以下 3 張線索圖中，找出哪一張是【${targetName}】畫的！`;
+
+    if (isGuessSubmitted) {
+        showGuessLockedScreen({ guessIndex: 0, targetName: targetName });
+        showView('view-guessing');
+        return;
+    }
+
+    $('three-cards-container').style.display = 'grid';
+    $('guessing-submit-wrap').style.display = 'block';
+    const lockedScreen = $('guess-locked-screen');
+    if (lockedScreen) lockedScreen.style.display = 'none';
 
     AppState.selectedGuessIndex = null;
     const btnSubmit = $('btn-confirm-guess');
@@ -820,7 +1250,7 @@ function renderGuessingView(targetName, targetAvatar, options) {
             card.classList.add('selected');
             AppState.selectedGuessIndex = idx;
             btnSubmit.disabled = false;
-            btnSubmit.innerText = `確定！這張就是【${targetName}】畫的 🎯`;
+            btnSubmit.innerText = `🔒 確定！鎖定第 ${idx + 1} 張作為【${targetName}】的畫作`;
             if (window.sound) window.sound.playClick();
         });
 
@@ -836,6 +1266,8 @@ function renderGuessingView(targetName, targetAvatar, options) {
     // Submit guess
     btnSubmit.onclick = () => {
         if (AppState.selectedGuessIndex === null) return;
+        btnSubmit.disabled = true;
+        btnSubmit.innerText = '鎖定中... 🔒';
 
         if (AppState.mode === 'online') {
             if (AppState.ws && AppState.ws.readyState === WebSocket.OPEN) {
@@ -850,50 +1282,7 @@ function renderGuessingView(targetName, targetAvatar, options) {
         }
     };
 
-    // Hide any previous result banner
-    $('guess-result-banner').style.display = 'none';
-    showView('view-guessing');
-    if (window.sound) window.sound.playShuffle();
-}
-
-function renderGuessResultBanner(result) {
-    const banner = $('guess-result-banner');
-    banner.style.display = 'block';
-    banner.className = `result-banner ${result.isCorrect ? 'correct' : 'wrong'}`;
-
-    if (result.isCorrect) {
-        banner.innerHTML = `
-            <div class="result-icon">🎉</div>
-            <h3>太神了！猜對了！</h3>
-            <p>這張果然就是【${result.targetName}】畫的線索！</p>
-            <div class="wish-reveal-box">
-                <div class="label">🎁 ${result.targetName} 真正想要收到的禮物是：</div>
-                <div class="val">${result.targetWish}</div>
-                ${result.targetHint ? `<div class="label" style="margin-top:8px;">💭 線索創作補充：</div><div style="color:#f1f5f9;font-style:italic;">「${result.targetHint}」</div>` : ''}
-            </div>
-            <p style="margin-top: 18px; color: var(--text-muted); font-size: 0.85rem;">太棒了！趕快記下心願，準備給他驚喜吧 🎁</p>
-        `;
-        if (window.sound) window.sound.playCorrect();
-        triggerConfetti();
-    } else {
-        banner.innerHTML = `
-            <div class="result-icon">😅</div>
-            <h3>哎呀！猜錯了～</h3>
-            <p>你選的那張其實是【${result.pickedArtistName}】畫的！</p>
-            <div class="wish-reveal-box">
-                <div class="label">🎁 不過沒關係！${result.targetName} 真正的禮物願望是：</div>
-                <div class="val">${result.targetWish}</div>
-                ${result.targetHint ? `<div class="label" style="margin-top:8px;">💭 線索創作補充：</div><div style="color:#f1f5f9;font-style:italic;">「${result.targetHint}」</div>` : ''}
-            </div>
-            <p style="margin-top: 18px; color: var(--text-muted); font-size: 0.85rem;">依然可以照著心願清單去準備最棒的禮物！🎁</p>
-        `;
-        if (window.sound) window.sound.playWrong();
-    }
-
-    // Scroll to feedback
-    banner.scrollIntoView({ behavior: 'smooth' });
-
-    // If host view, also provide trigger button for final showcase
+    // If host view, also provide trigger button for live reveal
     if (AppState.role === 'host') {
         const btnShowResults = $('btn-host-trigger-results');
         if (btnShowResults) {
@@ -901,13 +1290,16 @@ function renderGuessResultBanner(result) {
             btnShowResults.onclick = () => {
                 if (AppState.ws && AppState.ws.readyState === WebSocket.OPEN) {
                     AppState.ws.send(JSON.stringify({
-                        action: 'show_results',
+                        action: 'start_live_reveal',
                         room: AppState.roomCode
                     }));
                 }
             };
         }
     }
+
+    showView('view-guessing');
+    if (window.sound) window.sound.playShuffle();
 }
 
 // ==========================================================================
@@ -1183,6 +1575,10 @@ function executeLocalMatching() {
         }
     ];
 
+    // Balanced distractor sampling:
+    const decoyCounts = {};
+    players.forEach(p => { decoyCounts[p.id] = 0; });
+
     players.forEach(giver => {
         const target = players.find(p => p.id === giver.targetId);
         const correctChoice = {
@@ -1197,15 +1593,20 @@ function executeLocalMatching() {
         let distractors = [];
 
         if (otherPlayers.length >= 2) {
-            // Pick 2 random
-            const pool = [...otherPlayers].sort(() => 0.5 - Math.random());
-            distractors = pool.slice(0, 2).map(p => ({
-                art: p.art,
-                artistName: p.name,
-                wish: p.wish,
-                hint: p.hint,
-                isTarget: false
-            }));
+            // Sort by fewest distractor appearances so every artwork appears evenly
+            const pool = [...otherPlayers].sort((a, b) => 
+                (decoyCounts[a.id] - decoyCounts[b.id]) || (Math.random() - 0.5)
+            );
+            distractors = pool.slice(0, 2).map(p => {
+                decoyCounts[p.id] = (decoyCounts[p.id] || 0) + 1;
+                return {
+                    art: p.art,
+                    artistName: p.name,
+                    wish: p.wish,
+                    hint: p.hint,
+                    isTarget: false
+                };
+            });
         } else if (otherPlayers.length === 1) {
             distractors = [
                 {
@@ -1242,34 +1643,130 @@ function handlePassAndPlayGuessSubmit(selectedIdx) {
     currentP.isCorrect = isCorrect;
     currentP.pickedArtistName = picked.artistName;
 
-    // Show instant result
-    renderGuessResultBanner({
-        isCorrect: isCorrect,
-        targetName: target.name,
-        targetWish: target.wish,
-        targetHint: target.hint,
-        pickedArtistName: picked.artistName
+    // Show locked confirmation screen without revealing answers or correctness
+    showGuessLockedScreen({
+        guessIndex: selectedIdx,
+        targetName: target.name
     });
 
-    // Add "Next Person" button inside banner
-    const banner = $('guess-result-banner');
-    const btnNext = document.createElement('button');
-    btnNext.className = 'btn btn-gold btn-lg';
-    btnNext.style.marginTop = '20px';
+    // Provide next person / finale button in the locked container
+    const lockedCard = $('guess-locked-screen');
+    const existingBtn = $('btn-local-next-turn');
+    if (existingBtn) existingBtn.remove();
 
     const isLast = (g.currentPlayerIndex === g.players.length - 1);
-    btnNext.innerText = isLast ? '🏆 查看全場大揭曉！' : '換下一位玩家猜題 ➔';
+    const btnNext = document.createElement('button');
+    btnNext.id = 'btn-local-next-turn';
+    btnNext.className = 'btn btn-gold btn-lg';
+    btnNext.style.marginTop = '24px';
+    btnNext.innerText = isLast ? '🎬 所有人猜題完畢，開啟全場大揭曉！ ➔' : '交給下一位玩家猜題 ➔';
 
     btnNext.onclick = () => {
+        btnNext.remove();
         g.currentPlayerIndex++;
         if (g.currentPlayerIndex < g.players.length) {
             showLocalTurnShield('guessing');
         } else {
-            // Show final results
-            showLocalFinalResults();
+            setupLocalLiveReveal();
         }
     };
-    banner.appendChild(btnNext);
+    lockedCard.appendChild(btnNext);
+}
+
+function setupLocalLiveReveal() {
+    const g = AppState.localGame;
+    const roster = g.players.map(p => ({
+        id: p.id,
+        name: p.name,
+        avatar: p.avatar,
+        isRevealed: false
+    }));
+
+    enterLiveRevealPhase(roster);
+
+    const rosterBar = $('reveal-roster-bar');
+    if (rosterBar) {
+        rosterBar.innerHTML = '';
+        roster.forEach(player => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = `roster-player-btn ${player.isRevealed ? 'revealed' : ''} ${player.id === AppState.activeRevealUserId ? 'active' : ''}`;
+            btn.innerHTML = `
+                <span>${player.avatar}</span>
+                <span>${player.name}</span>
+                <span style="font-size:0.75rem; opacity:0.8;">${player.isRevealed ? '✅ 已揭曉' : '待揭曉'}</span>
+            `;
+
+            btn.onclick = () => {
+                AppState.activeRevealUserId = player.id;
+                AppState.activeRevealStep = 1;
+                renderLocalRosterBtns();
+
+                $('host-step-controls').style.display = 'flex';
+                $('current-spotlight-user-label').innerText = `正在揭曉：【${player.name}】（第 1 步）`;
+                updateStepButtonsActive(1);
+
+                playLocalSyncRevealStep(player.id, 1);
+            };
+
+            rosterBar.appendChild(btn);
+        });
+    }
+
+    function renderLocalRosterBtns() {
+        $$('.roster-player-btn').forEach((b, idx) => {
+            const p = roster[idx];
+            b.className = `roster-player-btn ${p.isRevealed ? 'revealed' : ''} ${p.id === AppState.activeRevealUserId ? 'active' : ''}`;
+        });
+    }
+
+    // Offline Finish Button
+    $('btn-host-finish-live-reveal').onclick = () => {
+        showLocalFinalResults();
+    };
+
+    // Offline Step Buttons
+    $('btn-step-action-1').onclick = () => {
+        if (!AppState.activeRevealUserId) return;
+        playLocalSyncRevealStep(AppState.activeRevealUserId, 1);
+    };
+    $('btn-step-action-2').onclick = () => {
+        if (!AppState.activeRevealUserId) return;
+        playLocalSyncRevealStep(AppState.activeRevealUserId, 2);
+    };
+    $('btn-step-action-3').onclick = () => {
+        if (!AppState.activeRevealUserId) return;
+        playLocalSyncRevealStep(AppState.activeRevealUserId, 3);
+    };
+}
+
+function playLocalSyncRevealStep(userId, step) {
+    const g = AppState.localGame;
+    const player = g.players.find(p => p.id === userId);
+    if (!player) return;
+
+    const target = g.players.find(p => p.id === player.targetId);
+    const options = player.localChoices.map((c, idx) => ({
+        index: idx,
+        art: c.art,
+        artistName: c.artistName,
+        isTarget: c.isTarget,
+        isPicked: (idx === player.guessIndex)
+    }));
+
+    handleSyncRevealStep({
+        step: step,
+        userId: player.id,
+        userName: player.name,
+        userAvatar: player.avatar,
+        receiverName: target.name,
+        receiverAvatar: target.avatar,
+        receiverWish: target.wish,
+        receiverHint: target.hint,
+        pickedIndex: player.guessIndex,
+        isCorrect: player.isCorrect,
+        options: options
+    });
 }
 
 function showLocalFinalResults() {
