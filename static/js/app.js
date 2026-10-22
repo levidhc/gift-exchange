@@ -129,16 +129,21 @@ function initApp() {
     const urlParams = new URLSearchParams(window.location.search);
     const hostFromUrl = urlParams.get('host') || (urlParams.get('role') === 'host' ? urlParams.get('room') : null);
     const roomFromUrl = urlParams.get('room');
+    const savedHostRoom = localStorage.getItem('host_room_code') || sessionStorage.getItem('host_room_code');
 
     if (hostFromUrl) {
         // Direct reconnect as host from URL: ?host=EV94 or ?room=EV94&role=host
         connectWebSocket('host', hostFromUrl.toUpperCase());
     } else if (roomFromUrl) {
-        openJoinModal(roomFromUrl.toUpperCase(), 'player');
+        // Check if this browser was previously the HOST of this exact room
+        if (savedHostRoom && savedHostRoom.toUpperCase() === roomFromUrl.toUpperCase()) {
+            connectWebSocket('host', roomFromUrl.toUpperCase());
+        } else {
+            openJoinModal(roomFromUrl.toUpperCase(), 'player');
+        }
     } else {
         showView('view-home');
         // Check if there is a previously saved host room
-        const savedHostRoom = localStorage.getItem('host_room_code');
         if (savedHostRoom) {
             const banner = $('banner-resume-host');
             if (banner) {
@@ -395,6 +400,13 @@ function startOnlineGameAsHost() {
 
 function renderHostLobby(roomCode, joinUrl) {
     AppState.roomCode = roomCode;
+    AppState.role = 'host';
+    localStorage.setItem('host_room_code', roomCode);
+    sessionStorage.setItem('host_room_code', roomCode);
+
+    try {
+        window.history.replaceState({ room: roomCode, role: 'host' }, '', `${window.location.pathname}?room=${roomCode}&role=host`);
+    } catch (e) {}
 
     // Use current browser origin if on a public domain (e.g. onrender.com)
     let actualJoinUrl = `${window.location.origin}/?room=${roomCode}`;
@@ -986,21 +998,43 @@ function handleServerEvent(data) {
         localStorage.setItem('host_room_code', data.room);
         sessionStorage.setItem('host_room_code', data.room);
 
+        try {
+            window.history.replaceState({ room: data.room, role: 'host' }, '', `${window.location.pathname}?room=${data.room}&role=host`);
+        } catch (e) {}
+
         renderHostLobby(data.room, data.joinUrl);
         updateHostPlayerList(data.players);
         updateHostFlowchart(data.phase);
         updateHeaderProfile('主持人', '👑', true);
 
-        if (data.phase === 'art') {
-            $('host-art-progress-panel').style.display = 'block';
+        const btnStartArt = $('btn-host-start-art');
+        const artProgress = $('host-art-progress-panel');
+        const guessingProgress = $('host-guessing-progress-panel');
+
+        if (data.phase === 'lobby') {
+            if (btnStartArt) btnStartArt.style.display = 'block';
+            if (artProgress) artProgress.style.display = 'none';
+            if (guessingProgress) guessingProgress.style.display = 'none';
+            showView('view-host-lobby');
+        } else if (data.phase === 'art') {
+            if (btnStartArt) btnStartArt.style.display = 'none';
+            if (artProgress) artProgress.style.display = 'block';
+            if (guessingProgress) guessingProgress.style.display = 'none';
+            showView('view-host-lobby');
         } else if (data.phase === 'guessing') {
-            $('host-art-progress-panel').style.display = 'none';
-            $('btn-host-start-art').style.display = 'none';
-            $('host-guessing-progress-panel').style.display = 'block';
+            if (btnStartArt) btnStartArt.style.display = 'none';
+            if (artProgress) artProgress.style.display = 'none';
+            if (guessingProgress) guessingProgress.style.display = 'block';
+            showView('view-host-lobby');
         } else if (data.phase === 'live_reveal') {
             enterLiveRevealPhase(data.revealRoster);
             if (data.currentReveal) {
                 handleSyncRevealStep(data.currentReveal);
+            }
+        } else if (data.phase === 'results') {
+            if (data.finalResults) {
+                updateHostFlowchart('results');
+                renderFinalShowcase(data.finalResults);
             }
         }
         showToast(`已成功以主持人身分返回房間 [${data.room}]！👑`);
@@ -1094,6 +1128,16 @@ function handleServerEvent(data) {
     }
     else if (ev === 'error') {
         showToast(`⚠️ ${data.message}`);
+        if (data.message && data.message.includes('找不到房間代碼')) {
+            localStorage.removeItem('host_room_code');
+            sessionStorage.removeItem('host_room_code');
+            const resumeBanner = $('banner-resume-host');
+            if (resumeBanner) resumeBanner.style.display = 'none';
+            try {
+                window.history.replaceState({}, '', window.location.pathname);
+            } catch (e) {}
+            showView('view-home');
+        }
     }
 }
 

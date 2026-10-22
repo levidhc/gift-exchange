@@ -72,6 +72,7 @@ class Room:
         self.exchange_ring = []  # list of tuples or dicts
         self.matching_data = {}  # player_id -> { target_id, options, correct_index }
         self.current_reveal = None  # stores current synchronized reveal step payload
+        self.final_results_data = None  # stores completed final summary payload
 
     def add_player(self, player_id, name, avatar, ws=None):
         if player_id not in self.players:
@@ -213,6 +214,7 @@ async def ws_handler(request):
                     is_host = True
                     lan_ip = get_lan_ip()
                     port = request.app.get("port", 8000)
+                    join_url = get_join_url(request, code)
                     reveal_roster = [
                         {
                             "id": p["id"],
@@ -234,8 +236,13 @@ async def ws_handler(request):
                         "port": port,
                         "joinUrl": join_url,
                         "revealRoster": reveal_roster,
-                        "currentReveal": room.current_reveal
+                        "currentReveal": room.current_reveal,
+                        "finalResults": room.final_results_data
                     }))
+
+                    # If host rejoins during completed results phase, push final results
+                    if room.phase == "results" and room.final_results_data:
+                        await ws.send_str(json.dumps(room.final_results_data))
                 else:
                     player_id = data.get("playerId") or f"p_{random.randint(10000, 99999)}"
                     name = (data.get("name") or "神秘玩家").strip()
@@ -292,6 +299,8 @@ async def ws_handler(request):
                         }))
                         if room.current_reveal:
                             await ws.send_str(json.dumps(room.current_reveal))
+                    elif room.phase == "results" and room.final_results_data:
+                        await ws.send_str(json.dumps(room.final_results_data))
 
             # --- 3. HOST STARTS ART PHASE ---
             elif action == "start_art_phase":
@@ -670,6 +679,7 @@ async def ws_handler(request):
                     "totalPlayers": len(current_room.players)
                 }
 
+                current_room.final_results_data = results_payload
                 await current_room.broadcast(results_payload)
 
             # --- 10. PLAYER LOGOUT ---
