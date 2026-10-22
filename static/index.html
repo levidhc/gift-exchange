@@ -632,6 +632,17 @@
                     </button>
                 </div>
 
+                <!-- Host Detected Notice (Optional quick switch if user is host) -->
+                <div id="join-host-detected-notice" style="display:none; background:rgba(251,191,36,0.15); border:1px solid rgba(251,191,36,0.4); border-radius:var(--radius-sm); padding:10px 14px; margin-bottom:14px; font-size:0.85rem; color:#fef08a;">
+                    👑 <strong>偵測到您是此房間的主持人！</strong><br>
+                    <div style="margin-top:6px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                        <button type="button" id="btn-quick-switch-host" class="btn btn-gold btn-sm" style="padding:4px 12px; font-size:0.82rem;">
+                            切換為主持人進入 ➔
+                        </button>
+                        <span style="font-size:0.75rem; color:var(--text-muted);">或直接在下方以玩家身分加入玩遊戲</span>
+                    </div>
+                </div>
+
                 <div class="input-group">
                     <label class="input-label" for="input-join-room">4 碼房間代號：</label>
                     <input type="text" id="input-join-room" class="input-field" placeholder="例如：EV94" maxlength="6" style="text-transform: uppercase; font-weight:700; font-size:1.25rem; letter-spacing:2px;" />

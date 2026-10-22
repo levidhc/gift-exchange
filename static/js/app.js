@@ -132,15 +132,11 @@ function initApp() {
     const savedHostRoom = localStorage.getItem('host_room_code') || sessionStorage.getItem('host_room_code');
 
     if (hostFromUrl) {
-        // Direct reconnect as host from URL: ?host=EV94 or ?room=EV94&role=host
+        // Direct reconnect as host ONLY if explicitly specified: ?host=EV94 or ?room=EV94&role=host
         connectWebSocket('host', hostFromUrl.toUpperCase());
     } else if (roomFromUrl) {
-        // Check if this browser was previously the HOST of this exact room
-        if (savedHostRoom && savedHostRoom.toUpperCase() === roomFromUrl.toUpperCase()) {
-            connectWebSocket('host', roomFromUrl.toUpperCase());
-        } else {
-            openJoinModal(roomFromUrl.toUpperCase(), 'player');
-        }
+        // Standard invitation link (?room=CODE): Always open Join Modal as player!
+        openJoinModal(roomFromUrl.toUpperCase(), 'player');
     } else {
         showView('view-home');
         // Check if there is a previously saved host room
@@ -307,6 +303,8 @@ function switchJoinTab(tab) {
         if (playerFields) playerFields.style.display = 'none';
         if (hostHint) hostHint.style.display = 'block';
         if (btnSubmit) btnSubmit.innerText = '以主持人身分進入 ➔';
+        const hostNotice = $('join-host-detected-notice');
+        if (hostNotice) hostNotice.style.display = 'none';
     } else {
         tabPlayer.style.background = 'var(--primary-red)';
         tabPlayer.style.color = '#fff';
@@ -328,6 +326,25 @@ function switchJoinTab(tab) {
 function openJoinModal(prefilledCode = '', initialTab = 'player') {
     $('input-join-room').value = prefilledCode;
     $('input-join-name').value = localStorage.getItem('player_name') || '';
+
+    // If prefilled code matches host's saved room, provide a quick switch button
+    const savedHostRoom = localStorage.getItem('host_room_code') || sessionStorage.getItem('host_room_code');
+    const isSavedHost = savedHostRoom && prefilledCode && (savedHostRoom.toUpperCase() === prefilledCode.toUpperCase());
+
+    const hostNotice = $('join-host-detected-notice');
+    if (hostNotice) {
+        if (isSavedHost && initialTab === 'player') {
+            hostNotice.style.display = 'block';
+            const btnQuickSwitch = $('btn-quick-switch-host');
+            if (btnQuickSwitch) {
+                btnQuickSwitch.onclick = () => {
+                    switchJoinTab('host');
+                };
+            }
+        } else {
+            hostNotice.style.display = 'none';
+        }
+    }
 
     // Render avatar selection
     const grid = $('avatar-selector-grid');
@@ -405,7 +422,7 @@ function renderHostLobby(roomCode, joinUrl) {
     sessionStorage.setItem('host_room_code', roomCode);
 
     try {
-        window.history.replaceState({ room: roomCode, role: 'host' }, '', `${window.location.pathname}?room=${roomCode}&role=host`);
+        window.history.replaceState({ room: roomCode }, '', `${window.location.pathname}?room=${roomCode}`);
     } catch (e) {}
 
     // Use current browser origin if on a public domain (e.g. onrender.com)
@@ -999,7 +1016,7 @@ function handleServerEvent(data) {
         sessionStorage.setItem('host_room_code', data.room);
 
         try {
-            window.history.replaceState({ room: data.room, role: 'host' }, '', `${window.location.pathname}?room=${data.room}&role=host`);
+            window.history.replaceState({ room: data.room }, '', `${window.location.pathname}?room=${data.room}`);
         } catch (e) {}
 
         renderHostLobby(data.room, data.joinUrl);
