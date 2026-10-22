@@ -155,6 +155,11 @@
                         <div class="qr-card">
                             <span class="hero-tag">掃描加入房間</span>
                             <div class="room-code-tag" id="host-room-code">----</div>
+                            <div class="host-pwd-badge" style="margin: 8px auto 14px; background: rgba(251,191,36,0.15); border: 1px solid rgba(251,191,36,0.4); border-radius: var(--radius-sm); padding: 6px 14px; display: inline-flex; align-items: center; gap: 8px;">
+                                <span style="font-size:0.9rem;">🔒 主持人密碼：</span>
+                                <strong id="host-display-password" style="letter-spacing: 2px; font-size: 1.15rem; color: #fff;">----</strong>
+                                <button id="btn-copy-host-pwd" class="btn btn-secondary btn-sm" type="button" style="padding: 2px 8px; font-size: 0.75rem;">複製密碼</button>
+                            </div>
                             <div class="qr-wrapper" id="host-qrcode-box"></div>
                             <div class="join-link-box">
                                 <input type="text" id="host-join-url-input" class="input-field" readonly />
@@ -660,12 +665,48 @@
                     </div>
                 </div>
 
+                <div id="join-host-password-group" style="display:none;" class="input-group">
+                    <label class="input-label" for="input-join-host-password">
+                        🔒 主持人管理密碼： <span style="color:var(--primary-red);">*</span>
+                    </label>
+                    <input type="password" id="input-join-host-password" class="input-field" placeholder="請輸入主持人設定的管理密碼" maxlength="20" style="letter-spacing:2px; font-size:1.15rem;" />
+                </div>
+
                 <div id="join-host-hint" style="display:none; background:rgba(251,191,36,0.12); border:1px solid rgba(251,191,36,0.3); border-radius:var(--radius-sm); padding:10px 14px; margin-bottom:16px; font-size:0.85rem; color:#fef08a;">
-                    👑 <strong>主持人說明：</strong> 輸入您先前建立的 4 碼房間代碼（例如：EV94），即可重返大廳控制台！
+                    👑 <strong>主持人說明：</strong> 請輸入您先前設定的 4 碼房間代碼與主持人密碼，即可安全重返大廳控制台！
                 </div>
 
                 <button id="btn-submit-join" class="btn btn-primary btn-lg btn-block" type="button">
                     進入房間 ➔
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= MODAL: CREATE HOST ROOM ================= -->
+    <div id="modal-create-room" class="modal-overlay">
+        <div class="modal-content" style="max-width: 440px;">
+            <div class="modal-header">
+                <h3 style="font-size: 1.25rem;">👑 建立主持人房間</h3>
+                <button id="btn-cancel-create-room" class="btn-icon" style="width:32px; height:32px; font-size:1rem;">✕</button>
+            </div>
+            <div class="modal-body" style="align-items: stretch;">
+                <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 16px;">
+                    請為此房間設定<strong>主持人管理密碼</strong>（密碼鎖）。只有輸入此密碼的人才能進入或重返導播控制台，防止其他玩家誤入！
+                </p>
+
+                <div class="input-group">
+                    <label class="input-label" for="input-create-host-password">
+                        🔒 設定主持人密碼（建議 4 位數）：
+                    </label>
+                    <input type="text" id="input-create-host-password" class="input-field" placeholder="例如：1234 或 8888 (留空將自動產生)" maxlength="16" style="letter-spacing:2px; font-size:1.15rem; font-weight:700;" />
+                    <span style="font-size:0.75rem; color:var(--text-muted); margin-top:4px; display:block;">
+                        💡 建議設定簡單好記的數字（例如：1234）。進入大廳後隨時可查看密碼。
+                    </span>
+                </div>
+
+                <button id="btn-confirm-create-room" class="btn btn-primary btn-lg btn-block" type="button" style="margin-top:8px;">
+                    🚀 立即建立房間 ➔
                 </button>
             </div>
         </div>

@@ -15,6 +15,7 @@ const AppState = {
     joinUrl: '',
     drawingStudio: null,
     selectedGuessIndex: null,
+    hostPassword: null,
 
     // Live Reveal state
     revealRoster: [],
@@ -145,8 +146,9 @@ function initApp() {
             if (banner) {
                 banner.style.display = 'flex';
                 $('resume-host-code').innerText = savedHostRoom;
+                const savedPwd = localStorage.getItem('host_password') || '';
                 $('btn-resume-host-action').onclick = () => {
-                    connectWebSocket('host', savedHostRoom);
+                    connectWebSocket('host', savedHostRoom, '', '', savedPwd);
                 };
             }
         }
@@ -233,11 +235,21 @@ function openZoomModal(imageSrc, caption = '') {
 let activeJoinTab = 'player'; // 'player' | 'host'
 
 function setupHomeButtons() {
-    // 1. Create Room (Host)
+    // 1. Create Room (Host) - Open Password Setup Modal
     $('btn-mode-create').addEventListener('click', (e) => {
         e.stopPropagation();
         if (window.sound) window.sound.playClick();
-        startOnlineGameAsHost();
+        openCreateRoomModal();
+    });
+
+    $('btn-cancel-create-room').addEventListener('click', () => {
+        $('modal-create-room').classList.remove('open');
+    });
+
+    $('btn-confirm-create-room').addEventListener('click', () => {
+        const pwd = $('input-create-host-password').value.trim();
+        $('modal-create-room').classList.remove('open');
+        startOnlineGameAsHost(pwd);
     });
 
     // 1.2 Reconnect to Existing Room as Host
@@ -290,6 +302,8 @@ function switchJoinTab(tab) {
     const title = $('modal-join-title');
     const btnSubmit = $('btn-submit-join');
 
+    const hostPwdGroup = $('join-host-password-group');
+
     if (tab === 'host') {
         tabHost.style.background = 'var(--festive-gold)';
         tabHost.style.color = '#1a1a2e';
@@ -302,6 +316,17 @@ function switchJoinTab(tab) {
         if (title) title.innerText = '👑 重返主持房間';
         if (playerFields) playerFields.style.display = 'none';
         if (hostHint) hostHint.style.display = 'block';
+        if (hostPwdGroup) {
+            hostPwdGroup.style.display = 'block';
+            const savedHostPwd = localStorage.getItem('host_password') || '';
+            const code = $('input-join-room').value.trim().toUpperCase();
+            const savedHostRoom = localStorage.getItem('host_room_code') || '';
+            if (savedHostPwd && code === savedHostRoom.toUpperCase()) {
+                $('input-join-host-password').value = savedHostPwd;
+            } else if (!$('input-join-host-password').value) {
+                $('input-join-host-password').value = '';
+            }
+        }
         if (btnSubmit) btnSubmit.innerText = '以主持人身分進入 ➔';
         const hostNotice = $('join-host-detected-notice');
         if (hostNotice) hostNotice.style.display = 'none';
@@ -317,10 +342,23 @@ function switchJoinTab(tab) {
         if (title) title.innerText = '📱 加入遊戲房間';
         if (playerFields) playerFields.style.display = 'block';
         if (hostHint) hostHint.style.display = 'none';
+        if (hostPwdGroup) hostPwdGroup.style.display = 'none';
         if (btnSubmit) btnSubmit.innerText = '進入房間 ➔';
     }
 
     if (window.sound) window.sound.playClick();
+}
+
+function openCreateRoomModal() {
+    $('input-create-host-password').value = '1234';
+    $('modal-create-room').classList.add('open');
+    setTimeout(() => {
+        const inp = $('input-create-host-password');
+        if (inp) {
+            inp.focus();
+            inp.select();
+        }
+    }, 100);
 }
 
 function openJoinModal(prefilledCode = '', initialTab = 'player') {
@@ -378,12 +416,19 @@ function submitJoinRoom() {
     }
 
     if (activeJoinTab === 'host') {
+        const pwd = $('input-join-host-password').value.trim();
+        if (!pwd) {
+            showToast('請輸入主持人管理密碼！🔒');
+            $('input-join-host-password').focus();
+            return;
+        }
+
         // Reconnect as Host
         AppState.roomCode = code;
         AppState.role = 'host';
         AppState.mode = 'online';
         $('modal-join').classList.remove('open');
-        connectWebSocket('host', code);
+        connectWebSocket('host', code, '', '', pwd);
     } else {
         // Join as Player
         const name = $('input-join-name').value.trim();
@@ -409,21 +454,41 @@ function submitJoinRoom() {
 // Online Multiplayer: Host Flow
 // ==========================================================================
 
-function startOnlineGameAsHost() {
+function startOnlineGameAsHost(password = '') {
     AppState.mode = 'online';
     AppState.role = 'host';
-    connectWebSocket('host');
+    connectWebSocket('host', '', '', '', password);
 }
 
-function renderHostLobby(roomCode, joinUrl) {
+function renderHostLobby(roomCode, joinUrl, hostPassword = '') {
     AppState.roomCode = roomCode;
     AppState.role = 'host';
     localStorage.setItem('host_room_code', roomCode);
     sessionStorage.setItem('host_room_code', roomCode);
 
+    if (hostPassword) {
+        localStorage.setItem('host_password', hostPassword);
+        sessionStorage.setItem('host_password', hostPassword);
+        AppState.hostPassword = hostPassword;
+    }
+
     try {
         window.history.replaceState({ room: roomCode }, '', `${window.location.pathname}?room=${roomCode}`);
     } catch (e) {}
+
+    // Display password
+    const pwdDisplay = $('host-display-password');
+    const pwdToDisplay = hostPassword || AppState.hostPassword || localStorage.getItem('host_password') || '----';
+    if (pwdDisplay) pwdDisplay.innerText = pwdToDisplay;
+
+    const btnCopyPwd = $('btn-copy-host-pwd');
+    if (btnCopyPwd) {
+        btnCopyPwd.onclick = () => {
+            navigator.clipboard.writeText(pwdToDisplay).then(() => {
+                showToast(`已複製主持人密碼：${pwdToDisplay} 📋`);
+            });
+        };
+    }
 
     // Use current browser origin if on a public domain (e.g. onrender.com)
     let actualJoinUrl = `${window.location.origin}/?room=${roomCode}`;
@@ -531,7 +596,7 @@ function updateHostPlayerList(players) {
 // WebSocket Connection & Event Dispatcher
 // ==========================================================================
 
-function connectWebSocket(role, roomCode = '', name = '', avatar = '') {
+function connectWebSocket(role, roomCode = '', name = '', avatar = '', password = '') {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
 
@@ -542,14 +607,19 @@ function connectWebSocket(role, roomCode = '', name = '', avatar = '') {
         console.log('WebSocket connected.');
         if (role === 'host') {
             if (roomCode) {
-                // Reconnect to existing room as host
+                // Reconnect to existing room as host with password
+                const pwd = password || localStorage.getItem('host_password') || '';
                 ws.send(JSON.stringify({
                     action: 'join_room',
                     room: roomCode,
-                    role: 'host'
+                    role: 'host',
+                    password: pwd
                 }));
             } else {
-                ws.send(JSON.stringify({ action: 'create_room' }));
+                ws.send(JSON.stringify({
+                    action: 'create_room',
+                    password: password
+                }));
             }
         } else {
             const savedPlayerId = sessionStorage.getItem('player_id');
@@ -1003,7 +1073,12 @@ function handleServerEvent(data) {
     if (ev === 'room_created') {
         localStorage.setItem('host_room_code', data.room);
         sessionStorage.setItem('host_room_code', data.room);
-        renderHostLobby(data.room, data.joinUrl);
+        if (data.hostPassword) {
+            localStorage.setItem('host_password', data.hostPassword);
+            sessionStorage.setItem('host_password', data.hostPassword);
+            AppState.hostPassword = data.hostPassword;
+        }
+        renderHostLobby(data.room, data.joinUrl, data.hostPassword);
         updateHostFlowchart('lobby');
         updateHeaderProfile('主持人', '👑', true);
         if (window.sound) window.sound.playChime();
@@ -1014,12 +1089,17 @@ function handleServerEvent(data) {
         AppState.roomCode = data.room;
         localStorage.setItem('host_room_code', data.room);
         sessionStorage.setItem('host_room_code', data.room);
+        if (data.hostPassword) {
+            localStorage.setItem('host_password', data.hostPassword);
+            sessionStorage.setItem('host_password', data.hostPassword);
+            AppState.hostPassword = data.hostPassword;
+        }
 
         try {
             window.history.replaceState({ room: data.room }, '', `${window.location.pathname}?room=${data.room}`);
         } catch (e) {}
 
-        renderHostLobby(data.room, data.joinUrl);
+        renderHostLobby(data.room, data.joinUrl, data.hostPassword);
         updateHostPlayerList(data.players);
         updateHostFlowchart(data.phase);
         updateHeaderProfile('主持人', '👑', true);

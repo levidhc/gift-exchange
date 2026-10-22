@@ -63,8 +63,9 @@ def generate_room_code():
     return "".join(random.choice(chars) for _ in range(4))
 
 class Room:
-    def __init__(self, code):
+    def __init__(self, code, host_password=""):
         self.code = code
+        self.host_password = (host_password or f"{random.randint(1000, 9999)}").strip()
         self.created_at = datetime.now()
         self.phase = "lobby"  # lobby -> art -> guessing -> live_reveal -> results
         self.host_ws = None
@@ -176,7 +177,10 @@ async def ws_handler(request):
                 code = generate_room_code()
                 while code in rooms:
                     code = generate_room_code()
-                room = Room(code)
+                password = (data.get("password") or "").strip()
+                if not password:
+                    password = f"{random.randint(1000, 9999)}"
+                room = Room(code, host_password=password)
                 room.host_ws = ws
                 rooms[code] = room
                 current_room = room
@@ -189,11 +193,12 @@ async def ws_handler(request):
                 await ws.send_str(json.dumps({
                     "event": "room_created",
                     "room": code,
+                    "hostPassword": room.host_password,
                     "lanIp": lan_ip,
                     "port": port,
                     "joinUrl": join_url
                 }))
-                logger.info(f"Room {code} created by host. Join URL: {join_url}")
+                logger.info(f"Room {code} created by host with password {room.host_password}. Join URL: {join_url}")
 
             # --- 2. JOIN ROOM (Host reconnect or Player join) ---
             elif action == "join_room":
@@ -210,6 +215,14 @@ async def ws_handler(request):
                 role = data.get("role", "player")
 
                 if role == "host":
+                    input_pwd = (data.get("password") or "").strip()
+                    if room.host_password and input_pwd != room.host_password:
+                        await ws.send_str(json.dumps({
+                            "event": "error",
+                            "message": "🔒 主持人密碼錯誤！請輸入正確的管理密碼。"
+                        }))
+                        continue
+
                     room.host_ws = ws
                     is_host = True
                     lan_ip = get_lan_ip()
@@ -230,6 +243,7 @@ async def ws_handler(request):
                     await ws.send_str(json.dumps({
                         "event": "room_joined_as_host",
                         "room": code,
+                        "hostPassword": room.host_password,
                         "phase": room.phase,
                         "players": room.get_player_list_summary(),
                         "lanIp": lan_ip,
