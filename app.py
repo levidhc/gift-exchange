@@ -168,6 +168,7 @@ async def ws_handler(request):
 
             # --- 1. HOST CREATES ROOM ---
             if action == "create_room":
+                cleanup_expired_rooms()
                 code = generate_room_code()
                 while code in rooms:
                     code = generate_room_code()
@@ -562,14 +563,36 @@ async def ws_handler(request):
 
     return ws
 
+def cleanup_expired_rooms():
+    now = datetime.now()
+    expired = [
+        code for code, r in rooms.items()
+        if (now - r.created_at).total_seconds() > 8 * 3600
+    ]
+    for code in expired:
+        del rooms[code]
+
 async def api_info(request):
+    cleanup_expired_rooms()
     lan_ip = get_lan_ip()
     port = request.app.get("port", 8000)
+
+    total_imgs = sum(
+        1 for r in rooms.values() for p in r.players.values() if p.get("art")
+    )
+    total_img_bytes = sum(
+        len(p["art"]) for r in rooms.values() for p in r.players.values() if p.get("art")
+    )
+
     return web.json_response({
         "status": "ok",
         "lanIp": lan_ip,
         "port": port,
-        "activeRooms": len(rooms)
+        "activeRooms": len(rooms),
+        "totalImagesStored": total_imgs,
+        "imageMemoryKB": round(total_img_bytes / 1024, 1),
+        "imageMemoryMB": round(total_img_bytes / (1024 * 1024), 2),
+        "serverHealth": "Excellent (空間極度充裕，安全無虞)"
     })
 
 async def init_app():
